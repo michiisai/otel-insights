@@ -67,8 +67,8 @@ body {
   padding:       4px 12px;
   transition:    color 0.1s, border-color 0.1s;
 }
-.tab:hover       { color: var(--fg); }
-.tab.active      { color: var(--fg); border-color: var(--border); background: var(--bg); }
+.tab:hover  { color: var(--fg); }
+.tab.active { color: var(--fg); border-color: var(--border); background: var(--bg); }
 
 .toolbar-right { display: flex; align-items: center; gap: 6px; }
 
@@ -92,9 +92,9 @@ body {
   font-size:     12px;
   padding:       3px 8px;
 }
-.icon-btn:hover              { color: var(--fg); border-color: var(--border); }
-.icon-btn--danger            { color: var(--err); }
-.icon-btn--danger:hover      { border-color: var(--err); }
+.icon-btn:hover         { color: var(--fg); border-color: var(--border); }
+.icon-btn--danger       { color: var(--err); }
+.icon-btn--danger:hover { border-color: var(--err); }
 
 /* ── Panels ───────────────────────────────────────────────────────────── */
 .panel {
@@ -139,25 +139,108 @@ body {
 
 .expand-icon { color: var(--fg-muted); width: 12px; flex-shrink: 0; }
 
-.spans-container { margin-left: 20px; border-left: 2px solid var(--border); padding-left: 4px; }
-.loading-row     { color: var(--fg-muted); font-size: 12px; padding: 6px 8px; }
+.spans-container {
+  margin-left:  20px;
+  border-left:  2px solid var(--border);
+  padding-left: 4px;
+  /* prevent content from leaking outside this indented block */
+  overflow:     hidden;
+}
+.loading-row { color: var(--fg-muted); font-size: 12px; padding: 6px 8px; }
 
 /* ── Span rows ────────────────────────────────────────────────────────── */
 .span-row {
   display:       flex;
   align-items:   center;
-  gap:           8px;
+  gap:           6px;
   padding:       4px 8px;
   border-radius: 3px;
   font-size:     12px;
+  cursor:        pointer;
+  user-select:   none;
 }
 .span-row:hover { background: var(--bg-hover); }
 
+.span-expand-icon { color: var(--fg-muted); width: 10px; flex-shrink: 0; font-size: 9px; }
+
+/* ── Span detail drawer ───────────────────────────────────────────────── */
+.span-detail {
+  margin:        2px 0 4px;
+  border-left:   2px solid var(--accent);
+  padding-right: 12px;
+}
+
+.span-detail-inner {
+  background:    var(--bg-subtle);
+  border:        1px solid var(--border);
+  border-radius: 4px;
+  padding:       10px 12px;
+  display:       flex;
+  flex-direction: column;
+  gap:           10px;
+  font-size:     12px;
+}
+
+/* metadata key/value grid */
+.span-meta-grid {
+  display:               grid;
+  grid-template-columns: max-content 1fr;
+  gap:                   3px 12px;
+  align-items:           baseline;
+}
+.meta-key {
+  color:       var(--fg-muted);
+  font-size:   11px;
+  white-space: nowrap;
+  padding-top: 1px;
+}
+.meta-val { word-break: break-all; }
+
+/* attributes table */
+.attrs-section { display: flex; flex-direction: column; gap: 5px; }
+.attrs-title {
+  font-size:      10px;
+  font-weight:    600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color:          var(--fg-muted);
+}
+.attrs-table {
+  width:           100%;
+  border-collapse: collapse;
+  table-layout:    fixed;
+}
+.attrs-table tr:hover { background: var(--bg-hover); }
+.attr-key {
+  width:         40%;
+  padding:       2px 8px 2px 0;
+  color:         var(--fg-muted);
+  font-family:   var(--font-mono);
+  font-size:     11px;
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+.attr-val {
+  padding:       2px 0;
+  font-family:   var(--font-mono);
+  font-size:     11px;
+  word-break:    break-all;
+  overflow-wrap: anywhere;
+}
+
+.attrs-empty {
+  color:     var(--fg-muted);
+  font-size: 11px;
+  padding:   2px 0;
+}
+
 /* ── Shared cells ─────────────────────────────────────────────────────── */
-.cell--name    { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cell--service { color: var(--fg-muted); font-size: 11px; min-width: 80px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cell--dur     { font-family: var(--font-mono); font-size: 11px; color: var(--ok); min-width: 60px; text-align: right; }
-.cell--spans   { color: var(--fg-muted); font-size: 11px; min-width: 55px; text-align: right; }
+.cell--name    { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cell--service { color: var(--fg-muted); font-size: 11px; min-width: 80px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.cell--dur     { font-family: var(--font-mono); font-size: 11px; color: var(--ok); min-width: 55px; text-align: right; flex-shrink: 0; }
+.cell--spans   { color: var(--fg-muted); font-size: 11px; min-width: 55px; text-align: right; flex-shrink: 0; }
 
 /* ── Span kind badges ─────────────────────────────────────────────────── */
 .span-kind {
@@ -171,11 +254,11 @@ body {
   text-align:    center;
   flex-shrink:   0;
 }
-.kind-2 { background: rgba(0, 122, 204, 0.15); color: #4fc3f7; } /* SERVER */
-.kind-3 { background: rgba(78, 201, 176, 0.15); color: var(--ok); } /* CLIENT */
+.kind-2 { background: rgba(0, 122, 204, 0.15); color: #4fc3f7; }         /* SERVER */
+.kind-3 { background: rgba(78, 201, 176, 0.15); color: var(--ok); }      /* CLIENT */
 .kind-4, .kind-5 { background: rgba(204, 167, 0, 0.15); color: var(--warn-fg); } /* PRODUCER/CONSUMER */
 
-/* ── Pills ────────────────────────────────────────────────────────────── */
+/* ── Pills & badges ───────────────────────────────────────────────────── */
 .pill {
   font-size:     10px;
   padding:       1px 5px;
@@ -185,33 +268,50 @@ body {
 }
 .pill--err { background: rgba(244, 71, 71, 0.2); color: var(--err); }
 
+.attr-badge {
+  font-size:     10px;
+  padding:       1px 5px;
+  border-radius: 8px;
+  background:    rgba(0, 122, 204, 0.12);
+  color:         var(--fg-muted);
+  flex-shrink:   0;
+}
+
+/* ── Utility ──────────────────────────────────────────────────────────── */
+.mono     { font-family: var(--font-mono); }
+.text-err { color: var(--err); }
+
 /* ── Performance tab ──────────────────────────────────────────────────── */
 .metrics-grid {
   display:               grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap:                   12px;
   align-content:         start;
 }
 
 .card {
-  background:    var(--bg-subtle);
-  border:        1px solid var(--border);
-  border-radius: 6px;
-  padding:       12px 14px;
-  display:       flex;
-  flex-direction:column;
-  gap:           10px;
+  background:     var(--bg-subtle);
+  border:         1px solid var(--border);
+  border-radius:  6px;
+  padding:        12px 14px;
+  display:        flex;
+  flex-direction: column;
+  gap:            10px;
+  /* prevent content from overflowing the card boundary */
+  overflow:       hidden;
+  min-width:      0;
 }
 .card--wide { grid-column: 1 / -1; }
 
 .card-title {
-  font-size:     12px;
-  font-weight:   600;
-  color:         var(--fg-muted);
+  font-size:      12px;
+  font-weight:    600;
+  color:          var(--fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-bottom: 1px solid var(--border);
+  border-bottom:  1px solid var(--border);
   padding-bottom: 6px;
+  flex-shrink:    0;
 }
 
 /* ── Summary grid ─────────────────────────────────────────────────────── */
@@ -225,6 +325,8 @@ body {
   width:           100%;
   border-collapse: collapse;
   font-size:       12px;
+  /* fixed layout lets the browser respect column widths and truncate cells */
+  table-layout:    fixed;
 }
 .data-table th {
   text-align:    left;
@@ -233,18 +335,27 @@ body {
   font-weight:   600;
   border-bottom: 1px solid var(--border);
   white-space:   nowrap;
-}
-.data-table td    { padding: 4px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); }
-.data-table tbody tr:hover { background: var(--bg-hover); }
-.data-table tr.row--error td { background: rgba(244, 71, 71, 0.05); }
-
-.name-cell {
-  max-width:     240px;
-  display:       inline-block;
   overflow:      hidden;
-  text-overflow: ellipsis;
+}
+/* First column (name / operation) takes most of the space */
+.data-table th:first-child { width: 42%; }
+.data-table td {
+  padding:       4px 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  overflow:      hidden;
   white-space:   nowrap;
-  vertical-align: middle;
+  text-overflow: ellipsis;
+}
+.data-table tbody tr:hover         { background: var(--bg-hover); }
+.data-table tr.row--error td       { background: rgba(244, 71, 71, 0.05); }
+
+/* name-cell lives inside the first td — fills it and truncates */
+.name-cell {
+  display:        block;
+  width:          100%;
+  overflow:       hidden;
+  white-space:    nowrap;
+  text-overflow:  ellipsis;
 }
 
 /* ── Logs tab ─────────────────────────────────────────────────────────── */
@@ -267,7 +378,7 @@ body {
   padding:       4px 8px;
   outline:       none;
 }
-.logs-toolbar input  { flex: 1; }
+.logs-toolbar input { flex: 1; }
 .logs-toolbar input:focus,
 .logs-toolbar select:focus { border-color: var(--accent); }
 
@@ -282,13 +393,13 @@ body {
 }
 
 .log-row {
-  display:     flex;
-  align-items: baseline;
-  gap:         8px;
-  padding:     3px 6px;
+  display:       flex;
+  align-items:   baseline;
+  gap:           8px;
+  padding:       3px 6px;
   border-radius: 3px;
-  font-size:   12px;
-  border-left: 2px solid transparent;
+  font-size:     12px;
+  border-left:   2px solid transparent;
 }
 .log-row:hover { background: var(--bg-hover); }
 

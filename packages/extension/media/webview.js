@@ -11,18 +11,20 @@
   let activeTab = 'traces';
   /** @type {Set<string>} */
   const expandedTraces = new Set();
+  /** @type {Set<string>} expanded span detail drawers */
+  const expandedSpans = new Set();
 
   // ── Elements ─────────────────────────────────────────────────────────────────
   const $ = (/** @type {string} */ id) => document.getElementById(id);
 
-  const statusBadge   = $('status-badge');
-  const refreshBtn    = $('refresh-btn');
-  const clearBtn      = $('clear-btn');
-  const tracesList    = $('traces-list');
-  const logsList      = $('logs-list');
-  const logFilter     = /** @type {HTMLInputElement}  */ ($('log-filter'));
-  const logSeverity   = /** @type {HTMLSelectElement} */ ($('log-severity'));
-  const applyFilter   = $('apply-filter-btn');
+  const statusBadge = $('status-badge');
+  const refreshBtn  = $('refresh-btn');
+  const clearBtn    = $('clear-btn');
+  const tracesList  = $('traces-list');
+  const logsList    = $('logs-list');
+  const logFilter   = /** @type {HTMLInputElement}  */ ($('log-filter'));
+  const logSeverity = /** @type {HTMLSelectElement} */ ($('log-severity'));
+  const applyFilter = $('apply-filter-btn');
 
   // ── Tab switching ─────────────────────────────────────────────────────────────
   document.querySelectorAll('.tab').forEach(tab => {
@@ -35,7 +37,7 @@
 
       tab.classList.add('active');
       tab.setAttribute('aria-selected', 'true');
-      const name = /** @type {HTMLElement} */ (tab).dataset.tab ?? '';
+      const name  = /** @type {HTMLElement} */ (tab).dataset.tab ?? '';
       const panel = $(`${name}-panel`);
       if (panel) { panel.classList.add('active'); }
       activeTab = name;
@@ -44,9 +46,9 @@
   });
 
   function loadCurrentTab() {
-    if (activeTab === 'traces')      { vscode.postMessage({ type: 'getTraces' }); }
+    if (activeTab === 'traces')           { vscode.postMessage({ type: 'getTraces' }); }
     else if (activeTab === 'performance') { vscode.postMessage({ type: 'getMetrics' }); }
-    else if (activeTab === 'logs')   { fetchLogs(); }
+    else if (activeTab === 'logs')        { fetchLogs(); }
   }
 
   function fetchLogs() {
@@ -69,15 +71,40 @@
   applyFilter?.addEventListener('click', fetchLogs);
   logFilter?.addEventListener('keydown', e => { if (e.key === 'Enter') { fetchLogs(); } });
 
+  // ── Span detail: single delegated listener (attached once) ───────────────────
+  tracesList?.addEventListener('click', e => {
+    const spanRow = /** @type {HTMLElement|null} */ (
+      /** @type {HTMLElement} */ (e.target)?.closest('.span-row')
+    );
+    if (!spanRow) { return; }
+
+    const spanId = spanRow.dataset.spanId;
+    if (!spanId) { return; }
+
+    const detail = document.getElementById(`sd-${spanId}`);
+    if (!detail) { return; }
+
+    const icon = spanRow.querySelector('.span-expand-icon');
+    if (expandedSpans.has(spanId)) {
+      expandedSpans.delete(spanId);
+      detail.style.display = 'none';
+      if (icon) { icon.textContent = '▸'; }
+    } else {
+      expandedSpans.add(spanId);
+      detail.style.display = 'block';
+      if (icon) { icon.textContent = '▾'; }
+    }
+  });
+
   // ── Message handler ───────────────────────────────────────────────────────────
   window.addEventListener('message', event => {
     const msg = event.data;
     switch (msg.type) {
-      case 'status':  renderStatus(msg);       break;
-      case 'traces':  renderTraces(msg.data);  break;
-      case 'spans':   renderSpans(msg.traceId, msg.data); break;
-      case 'metrics': renderMetrics(msg.data); break;
-      case 'logs':    renderLogs(msg.data);    break;
+      case 'status':  renderStatus(msg);                    break;
+      case 'traces':  renderTraces(msg.data);               break;
+      case 'spans':   renderSpans(msg.traceId, msg.data);   break;
+      case 'metrics': renderMetrics(msg.data);              break;
+      case 'logs':    renderLogs(msg.data);                 break;
     }
   });
 
@@ -132,6 +159,7 @@
     });
   }
 
+  // ── Span tree ─────────────────────────────────────────────────────────────────
   function renderSpans(/** @type {string} */ traceId, /** @type {any[]} */ spans) {
     const container = $(`sc-${traceId}`);
     if (!container) { return; }
@@ -140,7 +168,7 @@
       return;
     }
 
-    // Build parent → children map
+    // Build tree
     /** @type {Record<string,any>} */
     const byId = {};
     spans.forEach(s => { byId[s.spanId] = { ...s, children: [] }; });
@@ -156,20 +184,71 @@
 
     /** @param {any} node @param {number} depth @returns {string} */
     function nodeHtml(node, depth) {
-      const isErr = node.statusCode === 2;
+      const isErr     = node.statusCode === 2;
+      const indent    = depth * 18 + 8;
+      const isOpen    = expandedSpans.has(node.spanId);
+      const attrCount = Object.keys(node.attributes ?? {}).length;
+
       return `
-        <div class="span-row ${isErr ? 'row--error' : ''}" style="padding-left:${depth * 18 + 8}px">
+        <div class="span-row ${isErr ? 'row--error' : ''}"
+             style="padding-left:${indent}px"
+             data-span-id="${esc(node.spanId)}">
+          <span class="span-expand-icon" aria-hidden="true">${isOpen ? '▾' : '▸'}</span>
           <span class="span-kind kind-${node.kind}">${SPAN_KIND[node.kind] ?? '?'}</span>
           <span class="cell cell--name">${esc(node.name)}</span>
           <span class="cell cell--service">${esc(node.serviceName)}</span>
           <span class="cell cell--dur">${fmtMs(node.durationMs)}</span>
+          ${attrCount > 0 ? `<span class="attr-badge" title="${attrCount} attribute${attrCount !== 1 ? 's' : ''}">${attrCount}</span>` : ''}
           ${isErr ? '<span class="pill pill--err">ERR</span>' : ''}
+        </div>
+        <div class="span-detail" id="sd-${esc(node.spanId)}"
+             style="display:${isOpen ? 'block' : 'none'}; padding-left:${indent + 36}px">
+          ${spanDetailHtml(node)}
         </div>
         ${node.children.map(c => nodeHtml(c, depth + 1)).join('')}
       `;
     }
 
     container.innerHTML = roots.map(r => nodeHtml(r, 0)).join('');
+  }
+
+  /** @param {any} node @returns {string} */
+  function spanDetailHtml(node) {
+    const STATUS_LABELS = ['UNSET', 'OK', 'ERROR'];
+    const KIND_LABELS   = ['UNSPECIFIED', 'INTERNAL', 'SERVER', 'CLIENT', 'PRODUCER', 'CONSUMER'];
+    const statusText    = STATUS_LABELS[node.statusCode] ?? String(node.statusCode);
+    const kindText      = KIND_LABELS[node.kind]         ?? String(node.kind);
+    const attrEntries   = Object.entries(node.attributes ?? {});
+
+    const metaHtml = [
+      ['Span ID',   `<span class="mono">${esc(node.spanId)}</span>`],
+      ['Duration',  `<span class="mono">${fmtMs(node.durationMs)}</span>`],
+      ['Kind',      kindText],
+      ['Status',    `<span class="${node.statusCode === 2 ? 'text-err' : ''}">${statusText}${node.statusMessage ? ': ' + esc(node.statusMessage) : ''}</span>`],
+      ['Start',     `<span class="mono">${fmtNano(node.startTimeUnixNano)}</span>`],
+    ].map(([k, v]) => `<div class="meta-key">${k}</div><div class="meta-val">${v}</div>`).join('');
+
+    const attrsHtml = attrEntries.length > 0
+      ? `<div class="attrs-section">
+           <div class="attrs-title">Attributes</div>
+           <table class="attrs-table">
+             ${attrEntries.map(([k, v]) => `
+               <tr>
+                 <td class="attr-key">${esc(k)}</td>
+                 <td class="attr-val">${esc(fmtAttr(v))}</td>
+               </tr>`).join('')}
+           </table>
+         </div>`
+      : '<div class="attrs-empty">No attributes</div>';
+
+    return `<div class="span-detail-inner"><div class="span-meta-grid">${metaHtml}</div>${attrsHtml}</div>`;
+  }
+
+  /** @param {unknown} v @returns {string} */
+  function fmtAttr(v) {
+    if (v === null || v === undefined) { return ''; }
+    if (typeof v === 'object')         { return JSON.stringify(v); }
+    return String(v);
   }
 
   // ── Performance ───────────────────────────────────────────────────────────────
@@ -324,10 +403,9 @@
   }
 
   /**
-   * Renders a simple HTML table.
-   * @param {string[]} headers
+   * @param {string[]}   headers
    * @param {string[][]} rows
-   * @param {string[]} [rowClasses]
+   * @param {string[]}   [rowClasses]
    */
   function table(headers, rows, rowClasses = []) {
     const ths = headers.map(h => `<th>${h}</th>`).join('');
