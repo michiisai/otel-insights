@@ -163,7 +163,6 @@ export class OtelInsightsPanel {
         <option value="17">Error+</option>
         <option value="21">Fatal only</option>
       </select>
-      <button id="apply-filter-btn">Filter</button>
     </div>
     <div id="logs-list" class="list-container">
       <div class="empty-state">Loading logs…</div>

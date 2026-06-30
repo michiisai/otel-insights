@@ -9,8 +9,11 @@ export interface LogQueryOptions {
 export function getLogs(db: QueryableDB, opts: LogQueryOptions = {}): LogRecord[] {
   const { filter = '', minSeverity = 0, limit = 500 } = opts;
 
+  // severity_number 0 = UNSPECIFIED (often emitted as "TRACE" by SDKs).
+  // Treat minSeverity 1 (Trace+) identically to 0 so those logs are included.
+  const effectiveMin = minSeverity <= 1 ? 0 : minSeverity;
   const conditions: string[] = ['severity_number >= ?'];
-  const params: unknown[]   = [minSeverity];
+  const params: unknown[]   = [effectiveMin];
 
   if (filter.trim()) {
     conditions.push('(body LIKE ? OR service_name LIKE ? OR severity_text LIKE ?)');

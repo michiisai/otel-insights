@@ -24,7 +24,6 @@
   const logsList    = $('logs-list');
   const logFilter   = /** @type {HTMLInputElement}  */ ($('log-filter'));
   const logSeverity = /** @type {HTMLSelectElement} */ ($('log-severity'));
-  const applyFilter = $('apply-filter-btn');
 
   // ── Tab switching ─────────────────────────────────────────────────────────────
   document.querySelectorAll('.tab').forEach(tab => {
@@ -68,8 +67,8 @@
     }
   });
 
-  applyFilter?.addEventListener('click', fetchLogs);
   logSeverity?.addEventListener('change', fetchLogs);
+  logFilter?.addEventListener('input', fetchLogs);
   logFilter?.addEventListener('keydown', e => { if (e.key === 'Enter') { fetchLogs(); } });
 
   // ── Span detail: single delegated listener (attached once) ───────────────────
