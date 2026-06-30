@@ -156,10 +156,12 @@ export class OtelInsightsPanel {
       <input  id="log-filter"   type="text"    placeholder="Filter by message, service…" />
       <select id="log-severity">
         <option value="0">All severities</option>
+        <option value="1">Trace+</option>
         <option value="5">Debug+</option>
         <option value="9">Info+</option>
         <option value="13">Warn+</option>
         <option value="17">Error+</option>
+        <option value="21">Fatal only</option>
       </select>
       <button id="apply-filter-btn">Filter</button>
     </div>
