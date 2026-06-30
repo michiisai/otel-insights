@@ -1,0 +1,60 @@
+{
+  "name": "otel-insights",
+  "displayName": "OTel Insights",
+  "description": "Surface OpenTelemetry agent telemetry — traces, metrics, and logs — directly in VS Code.",
+  "version": "0.1.0",
+  "publisher": "michiisai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/michiisai/otel-insights"
+  },
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Debuggers", "Other"],
+  "keywords": ["opentelemetry", "otel", "tracing", "observability", "agents", "llm"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "otel-insights.openPanel",
+        "title": "OTel Insights: Open Panel",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "otel-insights.clearData",
+        "title": "OTel Insights: Clear All Data"
+      }
+    ],
+    "configuration": {
+      "title": "OTel Insights",
+      "properties": {
+        "otelInsights.port": {
+          "type": "number",
+          "default": 4318,
+          "description": "Port for the OTLP/HTTP receiver (default: 4318)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit",
+    "vscode:prepublish": "node esbuild.js --minify",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@otel-insights/engine": "*",
+    "@otel-insights/receiver": "*",
+    "@otel-insights/types": "*",
+    "sql.js": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/sql.js": "^1.4.9",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.0"
+  }
+}
+

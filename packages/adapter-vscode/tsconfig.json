@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "lib": ["ES2020"],
+    "noEmit": true
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../types" },
+    { "path": "../receiver" },
+    { "path": "../engine" }
+  ]
+}

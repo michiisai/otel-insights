@@ -1,0 +1,57 @@
+import type { QueryableDB, Trace, Span } from '@otel-insights/types';
+
+export function getTraces(db: QueryableDB, limit = 200): Trace[] {
+  const rows = db.prepare(`
+    SELECT
+      trace_id,
+      MIN(start_time_unix_nano)  AS start_time_unix_nano,
+      COUNT(*)                   AS span_count,
+      SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count,
+      MAX(CASE WHEN (parent_span_id IS NULL OR parent_span_id = '')
+               THEN name END)    AS root_span_name,
+      MAX(service_name)          AS service_name,
+      MAX(CASE WHEN (parent_span_id IS NULL OR parent_span_id = '')
+               THEN duration_ms  ELSE 0 END) AS root_duration_ms
+    FROM spans
+    GROUP BY trace_id
+    ORDER BY MIN(start_time_unix_nano) DESC
+    LIMIT ?
+  `).all(limit);
+
+  return rows.map(r => ({
+    traceId:           String(r['trace_id']          ?? ''),
+    rootSpanName:      String(r['root_span_name']    ?? r['trace_id'] ?? ''),
+    serviceName:       String(r['service_name']      ?? ''),
+    startTimeUnixNano: String(r['start_time_unix_nano'] ?? '0'),
+    durationMs:        Number(r['root_duration_ms']  ?? 0),
+    spanCount:         Number(r['span_count']        ?? 0),
+    hasError:          Number(r['error_count']       ?? 0) > 0,
+  }));
+}
+
+export function getSpansByTraceId(db: QueryableDB, traceId: string): Span[] {
+  const rows = db.prepare(`
+    SELECT * FROM spans
+    WHERE trace_id = ?
+    ORDER BY start_time_unix_nano ASC
+  `).all(traceId);
+
+  return rows.map(r => ({
+    traceId:           String(r['trace_id']           ?? ''),
+    spanId:            String(r['span_id']            ?? ''),
+    parentSpanId:      r['parent_span_id'] != null ? String(r['parent_span_id']) : null,
+    name:              String(r['name']               ?? ''),
+    kind:              Number(r['kind']               ?? 0),
+    startTimeUnixNano: String(r['start_time_unix_nano'] ?? '0'),
+    endTimeUnixNano:   String(r['end_time_unix_nano']   ?? '0'),
+    durationMs:        Number(r['duration_ms']        ?? 0),
+    statusCode:        Number(r['status_code']        ?? 0),
+    statusMessage:     r['status_message'] != null ? String(r['status_message']) : null,
+    attributes:        parseJson(r['attributes']),
+    serviceName:       String(r['service_name']       ?? ''),
+  }));
+}
+
+function parseJson(v: unknown): Record<string, unknown> {
+  try { return JSON.parse(String(v ?? '{}')) as Record<string, unknown>; } catch { return {}; }
+}

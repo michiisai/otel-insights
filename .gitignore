@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.vsix
+*.js.map
+.vscode-test/
+out/
+tsconfig.tsbuildinfo
+packages/*/tsconfig.tsbuildinfo
+packages/*/dist/

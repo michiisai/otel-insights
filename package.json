@@ -1,0 +1,14 @@
+{
+  "name": "otel-insights-workspace",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build:types":   "npm run build --workspace=packages/types",
+    "build:receiver":"npm run build --workspace=packages/receiver",
+    "build:engine":  "npm run build --workspace=packages/engine",
+    "build:ext":     "npm run build --workspace=packages/adapter-vscode",
+    "build": "npm run build:types && npm run build:receiver && npm run build:engine && npm run build:ext",
+    "typecheck": "tsc --build packages/adapter-vscode/tsconfig.json",
+    "dev": "npm run build:types && npm run build:receiver && npm run build:engine && npm run watch --workspace=packages/adapter-vscode"
+  }
+}
