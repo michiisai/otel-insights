@@ -123,6 +123,21 @@ body {
 .empty-state code  { font-family: var(--font-mono); background: var(--bg-subtle); padding: 1px 4px; border-radius: 3px; }
 
 /* ── Trace rows ───────────────────────────────────────────────────────── */
+.traces-header {
+  display:        flex;
+  align-items:    center;
+  gap:            8px;
+  padding:        4px 8px;
+  font-size:      11px;
+  font-weight:    600;
+  color:          var(--fg-muted);
+  border-bottom:  1px solid var(--border);
+  flex-shrink:    0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  user-select:    none;
+}
+
 .trace-row {
   display:       flex;
   align-items:   center;
@@ -205,6 +220,10 @@ body {
   letter-spacing: 0.05em;
   color:          var(--fg-muted);
 }
+.attrs-scroll {
+  max-height:  180px;
+  overflow-y:  auto;
+}
 .attrs-table {
   width:           100%;
   border-collapse: collapse;
@@ -267,6 +286,7 @@ body {
   flex-shrink:   0;
 }
 .pill--err { background: rgba(244, 71, 71, 0.2); color: var(--err); }
+.pill--hidden { visibility: hidden; }
 
 .attr-badge {
   font-size:     10px;
@@ -379,6 +399,7 @@ body {
   outline:       none;
 }
 .logs-toolbar input { flex: 1; }
+.logs-toolbar select { width: 90px; flex-shrink: 0; }
 .logs-toolbar input:focus,
 .logs-toolbar select:focus { border-color: var(--accent); }
 

@@ -101,4 +101,5 @@ export type ExtensionToWebview =
   | { type: 'metrics'; data: MetricsData }
   | { type: 'logs'; data: LogRecord[] }
   | { type: 'status'; connected: boolean; port: number }
+  | { type: 'cleared' }
   | { type: 'error'; message: string };

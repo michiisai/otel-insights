@@ -61,10 +61,7 @@
   refreshBtn?.addEventListener('click', loadCurrentTab);
 
   clearBtn?.addEventListener('click', () => {
-    if (confirm('Clear all stored telemetry data? This cannot be undone.')) {
-      vscode.postMessage({ type: 'clearData' });
-      setTimeout(loadCurrentTab, 150);
-    }
+    vscode.postMessage({ type: 'clearData' });
   });
 
   logSeverity?.addEventListener('change', fetchLogs);
@@ -105,6 +102,7 @@
       case 'spans':   renderSpans(msg.traceId, msg.data);   break;
       case 'metrics': renderMetrics(msg.data);              break;
       case 'logs':    renderLogs(msg.data);                 break;
+      case 'cleared': loadCurrentTab();                     break;
     }
   });
 
@@ -130,7 +128,7 @@
         <span class="cell cell--service">${esc(t.serviceName)}</span>
         <span class="cell cell--dur">${fmtMs(t.durationMs)}</span>
         <span class="cell cell--spans">${t.spanCount} span${t.spanCount !== 1 ? 's' : ''}</span>
-        ${t.hasError ? '<span class="pill pill--err">ERR</span>' : ''}
+        <span class="pill pill--err${t.hasError ? '' : ' pill--hidden'}" aria-hidden="${t.hasError ? 'false' : 'true'}">ERR</span>
       </div>
       <div class="spans-container" id="sc-${esc(t.traceId)}"
            style="display:${expandedTraces.has(t.traceId) ? 'block' : 'none'}">
@@ -199,7 +197,7 @@
           <span class="cell cell--service">${esc(node.serviceName)}</span>
           <span class="cell cell--dur">${fmtMs(node.durationMs)}</span>
           ${attrCount > 0 ? `<span class="attr-badge" title="${attrCount} attribute${attrCount !== 1 ? 's' : ''}">${attrCount}</span>` : ''}
-          ${isErr ? '<span class="pill pill--err">ERR</span>' : ''}
+          <span class="pill pill--err${isErr ? '' : ' pill--hidden'}" aria-hidden="${isErr ? 'false' : 'true'}">ERR</span>
         </div>
         <div class="span-detail" id="sd-${esc(node.spanId)}"
              style="display:${isOpen ? 'block' : 'none'}; padding-left:${indent + 36}px">
@@ -221,7 +219,7 @@
     const attrEntries   = Object.entries(node.attributes ?? {});
 
     const metaHtml = [
-      ['Span ID',   `<span class="mono">${esc(node.spanId)}</span>`],
+      ['Span ID',   `<span class="mono" title="${esc(node.spanId)}">${esc(node.spanId.slice(0, 8))}…</span>`],
       ['Duration',  `<span class="mono">${fmtMs(node.durationMs)}</span>`],
       ['Kind',      kindText],
       ['Status',    `<span class="${node.statusCode === 2 ? 'text-err' : ''}">${statusText}${node.statusMessage ? ': ' + esc(node.statusMessage) : ''}</span>`],
@@ -230,14 +228,16 @@
 
     const attrsHtml = attrEntries.length > 0
       ? `<div class="attrs-section">
-           <div class="attrs-title">Attributes</div>
-           <table class="attrs-table">
-             ${attrEntries.map(([k, v]) => `
-               <tr>
-                 <td class="attr-key">${esc(k)}</td>
-                 <td class="attr-val">${esc(fmtAttr(v))}</td>
-               </tr>`).join('')}
-           </table>
+           <div class="attrs-title">Attributes (${attrEntries.length})</div>
+           <div class="attrs-scroll">
+             <table class="attrs-table">
+               ${attrEntries.map(([k, v]) => `
+                 <tr>
+                   <td class="attr-key">${esc(k)}</td>
+                   <td class="attr-val">${esc(fmtAttr(v))}</td>
+                 </tr>`).join('')}
+             </table>
+           </div>
          </div>`
       : '<div class="attrs-empty">No attributes</div>';
 

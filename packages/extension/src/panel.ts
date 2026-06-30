@@ -35,7 +35,7 @@ export class OtelInsightsPanel {
     );
 
     this.panel.webview.onDidReceiveMessage(
-      (msg: WebviewToExtension) => this.handleMessage(msg),
+      (msg: WebviewToExtension) => { this.handleMessage(msg).catch(console.error); },
       null,
       this.disposables,
     );
@@ -57,7 +57,7 @@ export class OtelInsightsPanel {
     this.panel.webview.postMessage(msg);
   }
 
-  private handleMessage(msg: WebviewToExtension): void {
+  private async handleMessage(msg: WebviewToExtension): Promise<void> {
     const db = this.store.getDb();
     switch (msg.type) {
       case 'ready':
@@ -75,10 +75,18 @@ export class OtelInsightsPanel {
       case 'getLogs':
         this.post({ type: 'logs', data: getLogs(db, { filter: msg.filter, minSeverity: msg.minSeverity }) });
         break;
-      case 'clearData':
-        this.store.clear();
-        this.post({ type: 'status', connected: true, port: this.port });
+      case 'clearData': {
+        const answer = await vscode.window.showWarningMessage(
+          'Clear all stored telemetry data? This cannot be undone.',
+          { modal: true },
+          'Clear',
+        );
+        if (answer === 'Clear') {
+          this.store.clear();
+          this.post({ type: 'cleared' });
+        }
         break;
+      }
     }
   }
 
@@ -118,6 +126,14 @@ export class OtelInsightsPanel {
 
   <!-- Traces tab -->
   <div id="traces-panel" class="panel active" role="tabpanel">
+    <div class="traces-header" aria-hidden="true">
+      <span class="expand-icon"></span>
+      <span class="cell cell--name">Trace</span>
+      <span class="cell cell--service">Service</span>
+      <span class="cell cell--dur">Duration</span>
+      <span class="cell cell--spans">Spans</span>
+      <span class="pill pill--err" style="visibility:hidden">ERR</span>
+    </div>
     <div id="traces-list" class="list-container">
       <div class="empty-state">Loading traces…</div>
     </div>
@@ -155,14 +171,14 @@ export class OtelInsightsPanel {
     <div class="logs-toolbar">
       <input  id="log-filter"   type="text"    placeholder="Filter by message, service…" />
       <select id="log-severity">
-        <option value="0">All severities</option>
-        <option value="1">Trace+</option>
-        <option value="5">Debug+</option>
-        <option value="9">Info+</option>
-        <option value="13">Warn+</option>
-        <option value="17">Error+</option>
-        <option value="21">Fatal only</option>
-      </select>
+          <option value="0">All</option>
+          <option value="1">Trace</option>
+          <option value="5">Debug</option>
+          <option value="9">Info</option>
+          <option value="13">Warn</option>
+          <option value="17">Error</option>
+          <option value="21">Fatal</option>
+        </select>
     </div>
     <div id="logs-list" class="list-container">
       <div class="empty-state">Loading logs…</div>
