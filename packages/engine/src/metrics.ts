@@ -1,5 +1,12 @@
 import type { QueryableDB, MetricsData } from '@otel-insights/types';
 
+// IMPORTANT: OTel attributes are stored as a flat JSON object with dotted keys,
+// e.g. {"gen_ai.request.model": "gpt-4o"}.
+// SQLite's json_extract treats unquoted dots as nested-object path separators, so
+// every dotted key MUST be quoted inside the path string:
+//   CORRECT:  json_extract(attributes, '$."gen_ai.request.model"')
+//   WRONG:    json_extract(attributes, '$.gen_ai.request.model')  ← always returns NULL
+
 export function getMetricsData(db: QueryableDB): MetricsData {
   // Slowest operations aggregated by span name
   const slowestOps = db.prepare(`
@@ -15,30 +22,29 @@ export function getMetricsData(db: QueryableDB): MetricsData {
     LIMIT 25
   `).all();
 
-  // Token usage via OpenTelemetry GenAI Semantic Conventions
-  // https://opentelemetry.io/docs/specs/semconv/gen-ai/
+  // Token usage — supports both OTel GenAI semconv and common llm.* conventions
   const tokenRows = db.prepare(`
     SELECT
       COALESCE(
-        json_extract(attributes, '$.gen_ai.request.model'),
+        json_extract(attributes, '$."gen_ai.request.model"'),
         json_extract(attributes, '$."llm.model"'),
         'unknown'
       ) AS model,
       SUM(COALESCE(
-        CAST(json_extract(attributes, '$.gen_ai.usage.input_tokens')  AS REAL),
-        CAST(json_extract(attributes, '$."llm.usage.prompt_tokens"')  AS REAL),
+        CAST(json_extract(attributes, '$."gen_ai.usage.input_tokens"')   AS REAL),
+        CAST(json_extract(attributes, '$."llm.usage.prompt_tokens"')     AS REAL),
         0
       )) AS prompt_tokens,
       SUM(COALESCE(
-        CAST(json_extract(attributes, '$.gen_ai.usage.output_tokens')    AS REAL),
-        CAST(json_extract(attributes, '$."llm.usage.completion_tokens"') AS REAL),
+        CAST(json_extract(attributes, '$."gen_ai.usage.output_tokens"')      AS REAL),
+        CAST(json_extract(attributes, '$."llm.usage.completion_tokens"')     AS REAL),
         0
       )) AS completion_tokens,
       COUNT(*) AS call_count
     FROM spans
     WHERE
-      json_extract(attributes, '$.gen_ai.request.model') IS NOT NULL
-      OR json_extract(attributes, '$."llm.model"')       IS NOT NULL
+      json_extract(attributes, '$."gen_ai.request.model"') IS NOT NULL
+      OR json_extract(attributes, '$."llm.model"')         IS NOT NULL
     GROUP BY model
     ORDER BY (prompt_tokens + completion_tokens) DESC
   `).all();
@@ -47,7 +53,7 @@ export function getMetricsData(db: QueryableDB): MetricsData {
   const toolRows = db.prepare(`
     SELECT
       COALESCE(
-        json_extract(attributes, '$.gen_ai.tool.name'),
+        json_extract(attributes, '$."gen_ai.tool.name"'),
         json_extract(attributes, '$."tool.name"'),
         json_extract(attributes, '$."tool_name"'),
         name
@@ -58,9 +64,9 @@ export function getMetricsData(db: QueryableDB): MetricsData {
       SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count
     FROM spans
     WHERE
-      json_extract(attributes, '$.gen_ai.tool.name') IS NOT NULL
-      OR json_extract(attributes, '$."tool.name"')   IS NOT NULL
-      OR json_extract(attributes, '$."tool_name"')   IS NOT NULL
+      json_extract(attributes, '$."gen_ai.tool.name"') IS NOT NULL
+      OR json_extract(attributes, '$."tool.name"')     IS NOT NULL
+      OR json_extract(attributes, '$."tool_name"')     IS NOT NULL
       OR name LIKE 'tool.%'
       OR name LIKE 'tool:%'
     GROUP BY tool_name
@@ -70,10 +76,10 @@ export function getMetricsData(db: QueryableDB): MetricsData {
 
   const summary = db.prepare(`
     SELECT
-      (SELECT COUNT(*)                FROM spans)         AS total_spans,
+      (SELECT COUNT(*)                 FROM spans)         AS total_spans,
       (SELECT COUNT(DISTINCT trace_id) FROM spans)        AS total_traces,
-      (SELECT COUNT(*)                FROM logs)          AS total_logs,
-      (SELECT COUNT(*)                FROM metric_points) AS total_metric_points
+      (SELECT COUNT(*)                 FROM logs)          AS total_logs,
+      (SELECT COUNT(*)                 FROM metric_points) AS total_metric_points
   `).get();
 
   return {
