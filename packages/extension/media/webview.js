@@ -55,7 +55,7 @@
     vscode.postMessage({
       type:        'getLogs',
       filter:      logFilter.value,
-      minSeverity: parseInt(logSeverity.value) || 0,
+      minSeverity: Number(logSeverity.value),
     });
   }
 
@@ -69,6 +69,7 @@
   });
 
   applyFilter?.addEventListener('click', fetchLogs);
+  logSeverity?.addEventListener('change', fetchLogs);
   logFilter?.addEventListener('keydown', e => { if (e.key === 'Enter') { fetchLogs(); } });
 
   // ── Span detail: single delegated listener (attached once) ───────────────────
