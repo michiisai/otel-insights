@@ -3,7 +3,8 @@
   "compilerOptions": {
     "composite": true,
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "types": ["node", "sql.js"]
   },
   "include": ["src"],
   "references": [
