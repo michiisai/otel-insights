@@ -46,12 +46,15 @@ export function getServiceNames(db: QueryableDB): string[] {
   return rows.map(r => String(r['service_name'] ?? ''));
 }
 
-export function getServiceSummary(db: QueryableDB, serviceName: string): ServiceSummary | null {
+export function getServiceSummary(db: QueryableDB, serviceName: string, sinceNano?: string): ServiceSummary | null {
   // Verify the service exists
   const exists = db.prepare(`
     SELECT 1 FROM spans WHERE service_name = ? LIMIT 1
   `).get(serviceName);
   if (!exists) { return null; }
+
+  const timeAnd   = sinceNano ? 'AND start_time_unix_nano >= ?' : '';
+  const baseParams = sinceNano ? [serviceName, sinceNano] : [serviceName];
 
   const countRow = db.prepare(`
     SELECT
@@ -60,16 +63,17 @@ export function getServiceSummary(db: QueryableDB, serviceName: string): Service
       COUNT(DISTINCT CASE WHEN status_code = 2 THEN trace_id END)   AS error_traces,
       SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END)             AS error_spans
     FROM spans
-    WHERE service_name = ?
-  `).get(serviceName);
+    WHERE service_name = ? ${timeAnd}
+  `).get(...baseParams);
 
   // p50 / p95 from root spans only (no parent_span_id)
   const durationRows = db.prepare(`
     SELECT duration_ms FROM spans
     WHERE service_name = ?
       AND (parent_span_id IS NULL OR parent_span_id = '')
+      ${timeAnd}
     ORDER BY duration_ms ASC
-  `).all(serviceName);
+  `).all(...baseParams);
 
   const durations = durationRows.map(r => Number(r['duration_ms'] ?? 0));
   const p50 = percentile(durations, 0.50);
@@ -84,11 +88,11 @@ export function getServiceSummary(db: QueryableDB, serviceName: string): Service
       COUNT(*)         AS count,
       SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count
     FROM spans
-    WHERE service_name = ?
+    WHERE service_name = ? ${timeAnd}
     GROUP BY name
     ORDER BY avg_duration_ms DESC
     LIMIT 15
-  `).all(serviceName);
+  `).all(...baseParams);
 
   // Token usage for this service
   const tokenRows = db.prepare(`
@@ -110,14 +114,14 @@ export function getServiceSummary(db: QueryableDB, serviceName: string): Service
       )) AS completion_tokens,
       COUNT(*) AS call_count
     FROM spans
-    WHERE service_name = ?
+    WHERE service_name = ? ${timeAnd}
       AND (
         json_extract(attributes, '$."gen_ai.request.model"') IS NOT NULL
         OR json_extract(attributes, '$."llm.model"') IS NOT NULL
       )
     GROUP BY model
     ORDER BY (prompt_tokens + completion_tokens) DESC
-  `).all(serviceName);
+  `).all(...baseParams);
 
   // Tool calls for this service
   const toolRows = db.prepare(`
@@ -133,7 +137,7 @@ export function getServiceSummary(db: QueryableDB, serviceName: string): Service
       SUM(duration_ms) AS total_duration_ms,
       SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count
     FROM spans
-    WHERE service_name = ?
+    WHERE service_name = ? ${timeAnd}
       AND (
         json_extract(attributes, '$."gen_ai.tool.name"') IS NOT NULL
         OR json_extract(attributes, '$."tool.name"')     IS NOT NULL
@@ -144,7 +148,7 @@ export function getServiceSummary(db: QueryableDB, serviceName: string): Service
     GROUP BY tool_name
     ORDER BY count DESC
     LIMIT 25
-  `).all(serviceName);
+  `).all(...baseParams);
 
   return {
     serviceName,

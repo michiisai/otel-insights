@@ -7,7 +7,10 @@ import type { QueryableDB, MetricsData } from '@otel-insights/types';
 //   CORRECT:  json_extract(attributes, '$."gen_ai.request.model"')
 //   WRONG:    json_extract(attributes, '$.gen_ai.request.model')  ← always returns NULL
 
-export function getMetricsData(db: QueryableDB): MetricsData {
+export function getMetricsData(db: QueryableDB, sinceNano?: string): MetricsData {
+  const timeFilter = sinceNano ? 'WHERE start_time_unix_nano >= ?' : '';
+  const timeParam  = sinceNano ? [sinceNano] : [];
+
   // Slowest operations aggregated by span name
   const slowestOps = db.prepare(`
     SELECT
@@ -17,12 +20,17 @@ export function getMetricsData(db: QueryableDB): MetricsData {
       COUNT(*)         AS count,
       SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count
     FROM spans
+    ${timeFilter}
     GROUP BY name
     ORDER BY avg_duration_ms DESC
     LIMIT 25
-  `).all();
+  `).all(...timeParam);
 
   // Token usage — supports both OTel GenAI semconv and common llm.* conventions
+  const tokenFilter = sinceNano
+    ? `WHERE start_time_unix_nano >= ?
+       AND (`
+    : 'WHERE (';
   const tokenRows = db.prepare(`
     SELECT
       COALESCE(
@@ -42,14 +50,19 @@ export function getMetricsData(db: QueryableDB): MetricsData {
       )) AS completion_tokens,
       COUNT(*) AS call_count
     FROM spans
-    WHERE
-      json_extract(attributes, '$."gen_ai.request.model"') IS NOT NULL
-      OR json_extract(attributes, '$."llm.model"')         IS NOT NULL
+    ${tokenFilter}
+        json_extract(attributes, '$."gen_ai.request.model"') IS NOT NULL
+        OR json_extract(attributes, '$."llm.model"')         IS NOT NULL
+      )
     GROUP BY model
     ORDER BY (prompt_tokens + completion_tokens) DESC
-  `).all();
+  `).all(...timeParam);
 
   // Tool calls — spans tagged with gen_ai.tool.name or tool.name
+  const toolFilter = sinceNano
+    ? `WHERE start_time_unix_nano >= ?
+       AND (`
+    : 'WHERE (';
   const toolRows = db.prepare(`
     SELECT
       COALESCE(
@@ -63,24 +76,25 @@ export function getMetricsData(db: QueryableDB): MetricsData {
       SUM(duration_ms) AS total_duration_ms,
       SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count
     FROM spans
-    WHERE
-      json_extract(attributes, '$."gen_ai.tool.name"') IS NOT NULL
-      OR json_extract(attributes, '$."tool.name"')     IS NOT NULL
-      OR json_extract(attributes, '$."tool_name"')     IS NOT NULL
-      OR name LIKE 'tool.%'
-      OR name LIKE 'tool:%'
+    ${toolFilter}
+        json_extract(attributes, '$."gen_ai.tool.name"') IS NOT NULL
+        OR json_extract(attributes, '$."tool.name"')     IS NOT NULL
+        OR json_extract(attributes, '$."tool_name"')     IS NOT NULL
+        OR name LIKE 'tool.%'
+        OR name LIKE 'tool:%'
+      )
     GROUP BY tool_name
     ORDER BY count DESC
     LIMIT 25
-  `).all();
+  `).all(...timeParam);
 
   const summary = db.prepare(`
     SELECT
-      (SELECT COUNT(*)                 FROM spans)         AS total_spans,
-      (SELECT COUNT(DISTINCT trace_id) FROM spans)        AS total_traces,
-      (SELECT COUNT(*)                 FROM logs)          AS total_logs,
-      (SELECT COUNT(*)                 FROM metric_points) AS total_metric_points
-  `).get();
+      (SELECT COUNT(*)                 FROM spans         ${sinceNano ? 'WHERE start_time_unix_nano >= ?' : ''}) AS total_spans,
+      (SELECT COUNT(DISTINCT trace_id) FROM spans         ${sinceNano ? 'WHERE start_time_unix_nano >= ?' : ''}) AS total_traces,
+      (SELECT COUNT(*)                 FROM logs          ${sinceNano ? 'WHERE timestamp_unix_nano >= ?'   : ''}) AS total_logs,
+      (SELECT COUNT(*)                 FROM metric_points ${sinceNano ? 'WHERE timestamp_unix_nano >= ?'   : ''}) AS total_metric_points
+  `).get(...(sinceNano ? [sinceNano, sinceNano, sinceNano, sinceNano] : []));
 
   return {
     slowestOperations: slowestOps.map(r => ({

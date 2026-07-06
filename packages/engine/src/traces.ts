@@ -1,6 +1,9 @@
 import type { QueryableDB, Trace, Span } from '@otel-insights/types';
 
-export function getTraces(db: QueryableDB, limit = 200): Trace[] {
+export function getTraces(db: QueryableDB, limit = 200, sinceNano?: string): Trace[] {
+  const havingClause = sinceNano ? 'HAVING MIN(start_time_unix_nano) >= ?' : '';
+  const params: unknown[] = sinceNano ? [sinceNano, limit] : [limit];
+
   const rows = db.prepare(`
     SELECT
       trace_id,
@@ -14,9 +17,10 @@ export function getTraces(db: QueryableDB, limit = 200): Trace[] {
                THEN duration_ms  ELSE 0 END) AS root_duration_ms
     FROM spans
     GROUP BY trace_id
+    ${havingClause}
     ORDER BY MIN(start_time_unix_nano) DESC
     LIMIT ?
-  `).all(limit);
+  `).all(...params);
 
   return rows.map(r => ({
     traceId:           String(r['trace_id']          ?? ''),

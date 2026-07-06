@@ -7,6 +7,7 @@ import {
   getLogs,
   getServiceNames,
   getServiceSummary,
+  parseSinceNano,
 } from '@otel-insights/engine';
 
 // convert nanoseconds to ISO date string, or return the original string if invalid
@@ -38,6 +39,7 @@ const SPAN_STATUS: Record<number, string> = { 0: 'UNSET', 1: 'OK', 2: 'ERROR' };
 
 interface FindRecentErrorsInput {
   limit?: number;
+  since?: string;
 }
 
 class FindRecentErrorsTool implements vscode.LanguageModelTool<FindRecentErrorsInput> {
@@ -48,11 +50,13 @@ class FindRecentErrorsTool implements vscode.LanguageModelTool<FindRecentErrorsI
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
     const limit = options.input.limit ?? 5;
-    const errors = getRecentErrorTraces(this.store.getDb(), limit);
+    const sinceNano = parseSinceNano(options.input.since);
+    const errors = getRecentErrorTraces(this.store.getDb(), limit, sinceNano ?? undefined);
 
     if (!errors.length) {
+      const qualifier = sinceNano ? ` in the requested time window` : '';
       return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart('No error traces found in the telemetry store.'),
+        new vscode.LanguageModelTextPart(`No error traces found${qualifier} in the telemetry store.`),
       ]);
     }
 
@@ -149,14 +153,15 @@ class GetErrorTraceTool implements vscode.LanguageModelTool<GetErrorTraceInput> 
   }
 }
 
-class GetTokenUsageTool implements vscode.LanguageModelTool<object> {
+class GetTokenUsageTool implements vscode.LanguageModelTool<{ since?: string }> {
   constructor(private readonly store: TelemetryStore) {}
 
   async invoke(
-    _options: vscode.LanguageModelToolInvocationOptions<object>,
+    options: vscode.LanguageModelToolInvocationOptions<{ since?: string }>,
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
-    const { tokenUsage } = getMetricsData(this.store.getDb());
+    const sinceNano = parseSinceNano(options.input.since);
+    const { tokenUsage } = getMetricsData(this.store.getDb(), sinceNano ?? undefined);
 
     if (!tokenUsage.length) {
       return new vscode.LanguageModelToolResult([
@@ -191,14 +196,15 @@ class GetTokenUsageTool implements vscode.LanguageModelTool<object> {
   }
 }
 
-class GetToolCallStatsTool implements vscode.LanguageModelTool<object> {
+class GetToolCallStatsTool implements vscode.LanguageModelTool<{ since?: string }> {
   constructor(private readonly store: TelemetryStore) {}
 
   async invoke(
-    _options: vscode.LanguageModelToolInvocationOptions<object>,
+    options: vscode.LanguageModelToolInvocationOptions<{ since?: string }>,
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
-    const { toolCalls } = getMetricsData(this.store.getDb());
+    const sinceNano = parseSinceNano(options.input.since);
+    const { toolCalls } = getMetricsData(this.store.getDb(), sinceNano ?? undefined);
 
     if (!toolCalls.length) {
       return new vscode.LanguageModelToolResult([
@@ -235,6 +241,7 @@ class GetToolCallStatsTool implements vscode.LanguageModelTool<object> {
 
 interface GetSlowestSpansInput {
   limit?: number;
+  since?: string;
 }
 
 class GetSlowestSpansTool implements vscode.LanguageModelTool<GetSlowestSpansInput> {
@@ -245,7 +252,8 @@ class GetSlowestSpansTool implements vscode.LanguageModelTool<GetSlowestSpansInp
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
     const limit = options.input.limit ?? 10;
-    const { slowestOperations } = getMetricsData(this.store.getDb());
+    const sinceNano = parseSinceNano(options.input.since);
+    const { slowestOperations } = getMetricsData(this.store.getDb(), sinceNano ?? undefined);
     const ops = slowestOperations.slice(0, limit);
 
     if (!ops.length) {
@@ -273,6 +281,7 @@ interface SearchLogsInput {
   query: string;
   minSeverity?: number;
   limit?: number;
+  since?: string;
 }
 
 class SearchLogsTool implements vscode.LanguageModelTool<SearchLogsInput> {
@@ -283,7 +292,8 @@ class SearchLogsTool implements vscode.LanguageModelTool<SearchLogsInput> {
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
     const { query = '', minSeverity = 0, limit = 50 } = options.input;
-    const logs = getLogs(this.store.getDb(), { filter: query, minSeverity, limit });
+    const sinceNano = parseSinceNano(options.input.since);
+    const logs = getLogs(this.store.getDb(), { filter: query, minSeverity, limit, sinceNano: sinceNano ?? undefined });
 
     if (!logs.length) {
       const qualifier = query ? ` matching "${query}"` : '';
@@ -310,15 +320,16 @@ class SearchLogsTool implements vscode.LanguageModelTool<SearchLogsInput> {
 }
 
 // high-level overview of recent telemetry data, including counts, health metrics, slowest operations, token usage, and tool calls.
-class SummarizeRecentActivityTool implements vscode.LanguageModelTool<object> {
+class SummarizeRecentActivityTool implements vscode.LanguageModelTool<{ since?: string }> {
   constructor(private readonly store: TelemetryStore) {}
 
   async invoke(
-    _options: vscode.LanguageModelToolInvocationOptions<object>,
+    options: vscode.LanguageModelToolInvocationOptions<{ since?: string }>,
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
     const db = this.store.getDb();
-    const { summary, slowestOperations, tokenUsage, toolCalls } = getMetricsData(db);
+    const sinceNano = parseSinceNano(options.input.since);
+    const { summary, slowestOperations, tokenUsage, toolCalls } = getMetricsData(db, sinceNano ?? undefined);
 
     if (summary.totalSpans === 0 && summary.totalLogs === 0) {
       return new vscode.LanguageModelToolResult([
@@ -328,12 +339,16 @@ class SummarizeRecentActivityTool implements vscode.LanguageModelTool<object> {
       ]);
     }
 
+    const timeAnd = sinceNano ? 'AND start_time_unix_nano >= ?' : '';
+    const timeParam = sinceNano ? [sinceNano] : [];
+
     const errorStats = db.prepare(`
       SELECT
         SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END)             AS error_spans,
         COUNT(DISTINCT CASE WHEN status_code = 2 THEN trace_id END)  AS error_traces
       FROM spans
-    `).get();
+      WHERE 1=1 ${timeAnd}
+    `).get(...timeParam);
 
     const errorSpans  = Number(errorStats?.['error_spans']  ?? 0);
     const errorTraces = Number(errorStats?.['error_traces'] ?? 0);
@@ -344,9 +359,9 @@ class SummarizeRecentActivityTool implements vscode.LanguageModelTool<object> {
     // p95 latency from root spans, computed in JS to avoid SQLite dynamic OFFSET
     const durationRows = db.prepare(`
       SELECT duration_ms FROM spans
-      WHERE parent_span_id IS NULL OR parent_span_id = ''
+      WHERE (parent_span_id IS NULL OR parent_span_id = '') ${timeAnd}
       ORDER BY duration_ms ASC
-    `).all();
+    `).all(...timeParam);
     const durations = durationRows.map(r => Number(r['duration_ms'] ?? 0));
     const p95 = durations.length > 0
       ? durations[Math.floor(durations.length * 0.95)] ?? durations[durations.length - 1]
@@ -402,6 +417,7 @@ class SummarizeRecentActivityTool implements vscode.LanguageModelTool<object> {
 
 interface GetServiceSummaryInput {
   serviceName?: string;
+  since?: string;
 }
 
 class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummaryInput> {
@@ -413,6 +429,7 @@ class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummar
   ): Promise<vscode.LanguageModelToolResult> {
     const db = this.store.getDb();
     const { serviceName } = options.input;
+    const sinceNano = parseSinceNano(options.input.since);
 
     // No serviceName → list available services so the caller can pick
     if (!serviceName?.trim()) {
@@ -433,7 +450,7 @@ class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummar
       ]);
     }
 
-    const summary = getServiceSummary(db, serviceName.trim());
+    const summary = getServiceSummary(db, serviceName.trim(), sinceNano ?? undefined);
     if (!summary) {
       const names = getServiceNames(db);
       const hint = names.length

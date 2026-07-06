@@ -13,7 +13,11 @@ export interface ErrorTrace extends Trace {
   errorSpans: ErrorSpanSummary[];
 }
 
-export function getRecentErrorTraces(db: QueryableDB, limit = 10): ErrorTrace[] {
+export function getRecentErrorTraces(db: QueryableDB, limit = 10, sinceNano?: string): ErrorTrace[] {
+  const havingParts = ['SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0'];
+  if (sinceNano) { havingParts.push('MIN(start_time_unix_nano) >= ?'); }
+  const params: unknown[] = sinceNano ? [sinceNano, limit] : [limit];
+
   const traceRows = db.prepare(`
     SELECT
       trace_id,
@@ -27,10 +31,10 @@ export function getRecentErrorTraces(db: QueryableDB, limit = 10): ErrorTrace[] 
                THEN duration_ms  ELSE 0 END) AS root_duration_ms
     FROM spans
     GROUP BY trace_id
-    HAVING SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0
+    HAVING ${havingParts.join(' AND ')}
     ORDER BY MIN(start_time_unix_nano) DESC
     LIMIT ?
-  `).all(limit);
+  `).all(...params);
 
   return traceRows.map(r => {
     const traceId = String(r['trace_id'] ?? '');

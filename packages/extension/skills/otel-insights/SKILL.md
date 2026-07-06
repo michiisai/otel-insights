@@ -1,6 +1,6 @@
 ---
 name: otel-insights
-description: 'Query live OpenTelemetry telemetry collected by the OTel Insights VS Code extension. Use when: debugging errors, investigating slow operations, slow requests, high latency, performance problems, slow agent, slow app, slow tool calls, "why did it take so long", "why is it slow", "what is slow", timeouts, latency spikes, bottlenecks, reviewing LLM token usage, analyzing tool call stats, searching application logs, or comparing two agents/services. Requires the OTel Insights extension to be active and receiving OTLP data on port 4318.'
+description: 'Query live OpenTelemetry telemetry collected by the OTel Insights VS Code extension. Use when: debugging errors, investigating slow operations, slow requests, high latency, performance problems, slow agent, slow tool calls, "why did it take so long", "why is it slow", "what is slow", timeouts, latency spikes, bottlenecks, reviewing LLM token usage, analyzing tool call stats, searching logs, or comparing two agents/services. Requires the OTel Insights extension to be active and receiving OTLP data on port 4318.'
 ---
 
 # OTel Insights — Telemetry Analysis
@@ -36,14 +36,28 @@ ALWAYS call `otel-insights_getToolCallStats` when the user asks about tool call 
 
 | Tool | Purpose | Key inputs |
 |------|---------|------------|
-| `otel-insights_summarizeRecentActivity` | High-level health overview — counts, error rate, p95 latency, token usage, tool calls | _(none)_ |
-| `otel-insights_getServiceSummary` | Full performance profile for one service/agent — error rate, p50/p95 latency, slowest ops, tokens, tool calls, all scoped to that service | `serviceName` (omit to list available services) |
-| `otel-insights_findRecentErrors` | List the most recent error traces with root cause span details | `limit` (default 5) |
+| `otel-insights_summarizeRecentActivity` | High-level health overview — counts, error rate, p95 latency, token usage, tool calls | `since` |
+| `otel-insights_getServiceSummary` | Full performance profile for one service/agent — error rate, p50/p95 latency, slowest ops, tokens, tool calls, all scoped to that service | `serviceName`, `since` |
+| `otel-insights_findRecentErrors` | List the most recent error traces with root cause span details | `limit` (default 5), `since` |
 | `otel-insights_getErrorTrace` | Full span tree for one trace — all spans, attributes, exception details | `traceId` (required) |
-| `otel-insights_getSlowestSpans` | Slowest operations ranked by average duration (across all services) | `limit` (default 10) |
-| `otel-insights_getTokenUsage` | LLM token consumption per model — prompt vs. completion tokens, call count | _(none)_ |
-| `otel-insights_getToolCallStats` | Per-tool call counts, error rates, and average durations | _(none)_ |
-| `otel-insights_searchLogs` | Full-text log search with optional severity filter | `query` (required), `minSeverity` (0–24), `limit` (default 50) |
+| `otel-insights_getSlowestSpans` | Slowest operations ranked by average duration (across all services) | `limit` (default 10), `since` |
+| `otel-insights_getTokenUsage` | LLM token consumption per model — prompt vs. completion tokens, call count | `since` |
+| `otel-insights_getToolCallStats` | Per-tool call counts, error rates, and average durations | `since` |
+| `otel-insights_searchLogs` | Full-text log search with optional severity filter | `query` (required), `minSeverity` (0–24), `limit` (default 50), `since` |
+
+## Time Filtering (`since` parameter)
+
+Every tool except `getErrorTrace` accepts an optional `since` parameter to scope results to a time window. This is useful when the telemetry database contains many historical runs and you only care about recent activity.
+
+| Format | Example | Meaning |
+|--------|---------|---------|
+| Relative seconds | `"30s"` | Last 30 seconds |
+| Relative minutes | `"5m"` | Last 5 minutes |
+| Relative hours | `"1h"`, `"6h"` | Last 1 or 6 hours |
+| Relative days | `"1d"`, `"7d"` | Last 1 or 7 days |
+| Absolute ISO 8601 | `"2024-01-15T10:00:00Z"` | Everything after this timestamp |
+
+When omitted, tools return data across all stored telemetry.
 
 ## Severity Levels for `searchLogs`
 

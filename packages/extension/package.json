@@ -41,6 +41,10 @@
             "serviceName": {
               "type": "string",
               "description": "The service_name to filter by (e.g. 'codex', 'copilot'). Omit to list all available service names."
+            },
+            "since": {
+              "type": "string",
+              "description": "Only include telemetry after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
             }
           }
         }
@@ -56,7 +60,12 @@
         "icon": "$(pulse)",
         "inputSchema": {
           "type": "object",
-          "properties": {}
+          "properties": {
+            "since": {
+              "type": "string",
+              "description": "Only include telemetry after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
+            }
+          }
         }
       },
       {
@@ -74,6 +83,10 @@
             "limit": {
               "type": "number",
               "description": "Maximum number of error traces to return. Defaults to 5."
+            },
+            "since": {
+              "type": "string",
+              "description": "Only include errors after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
             }
           }
         }
@@ -113,6 +126,10 @@
             "limit": {
               "type": "number",
               "description": "Maximum number of operations to return. Defaults to 10."
+            },
+            "since": {
+              "type": "string",
+              "description": "Only include spans after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
             }
           }
         }
@@ -140,6 +157,10 @@
             "limit": {
               "type": "number",
               "description": "Maximum number of log records to return. Defaults to 50."
+            },
+            "since": {
+              "type": "string",
+              "description": "Only include logs after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
             }
           },
           "required": ["query"]
@@ -156,7 +177,12 @@
         "icon": "$(symbol-numeric)",
         "inputSchema": {
           "type": "object",
-          "properties": {}
+          "properties": {
+            "since": {
+              "type": "string",
+              "description": "Only include spans after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
+            }
+          }
         }
       },
       {
@@ -170,7 +196,12 @@
         "icon": "$(tools)",
         "inputSchema": {
           "type": "object",
-          "properties": {}
+          "properties": {
+            "since": {
+              "type": "string",
+              "description": "Only include spans after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
+            }
+          }
         }
       }
     ],
