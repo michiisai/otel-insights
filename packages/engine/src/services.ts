@@ -1,0 +1,191 @@
+import type { QueryableDB } from '@otel-insights/types';
+
+export interface ServiceOperationStat {
+  name: string;
+  avgDurationMs: number;
+  maxDurationMs: number;
+  count: number;
+  errorCount: number;
+}
+
+export interface ServiceTokenUsage {
+  model: string;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  callCount: number;
+}
+
+export interface ServiceToolCallStat {
+  toolName: string;
+  count: number;
+  avgDurationMs: number;
+  totalDurationMs: number;
+  errorCount: number;
+}
+
+export interface ServiceSummary {
+  serviceName: string;
+  totalTraces: number;
+  totalSpans: number;
+  errorTraces: number;
+  errorSpans: number;
+  p50Ms: number;
+  p95Ms: number;
+  slowestOperations: ServiceOperationStat[];
+  tokenUsage: ServiceTokenUsage[];
+  toolCalls: ServiceToolCallStat[];
+}
+
+export function getServiceNames(db: QueryableDB): string[] {
+  const rows = db.prepare(`
+    SELECT DISTINCT service_name FROM spans
+    WHERE service_name IS NOT NULL AND service_name != ''
+    ORDER BY service_name ASC
+  `).all();
+  return rows.map(r => String(r['service_name'] ?? ''));
+}
+
+export function getServiceSummary(db: QueryableDB, serviceName: string): ServiceSummary | null {
+  // Verify the service exists
+  const exists = db.prepare(`
+    SELECT 1 FROM spans WHERE service_name = ? LIMIT 1
+  `).get(serviceName);
+  if (!exists) { return null; }
+
+  const countRow = db.prepare(`
+    SELECT
+      COUNT(DISTINCT trace_id)                                       AS total_traces,
+      COUNT(*)                                                       AS total_spans,
+      COUNT(DISTINCT CASE WHEN status_code = 2 THEN trace_id END)   AS error_traces,
+      SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END)             AS error_spans
+    FROM spans
+    WHERE service_name = ?
+  `).get(serviceName);
+
+  // p50 / p95 from root spans only (no parent_span_id)
+  const durationRows = db.prepare(`
+    SELECT duration_ms FROM spans
+    WHERE service_name = ?
+      AND (parent_span_id IS NULL OR parent_span_id = '')
+    ORDER BY duration_ms ASC
+  `).all(serviceName);
+
+  const durations = durationRows.map(r => Number(r['duration_ms'] ?? 0));
+  const p50 = percentile(durations, 0.50);
+  const p95 = percentile(durations, 0.95);
+
+  // Slowest operations for this service
+  const slowestRows = db.prepare(`
+    SELECT
+      name,
+      AVG(duration_ms) AS avg_duration_ms,
+      MAX(duration_ms) AS max_duration_ms,
+      COUNT(*)         AS count,
+      SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count
+    FROM spans
+    WHERE service_name = ?
+    GROUP BY name
+    ORDER BY avg_duration_ms DESC
+    LIMIT 15
+  `).all(serviceName);
+
+  // Token usage for this service
+  const tokenRows = db.prepare(`
+    SELECT
+      COALESCE(
+        json_extract(attributes, '$."gen_ai.request.model"'),
+        json_extract(attributes, '$."llm.model"'),
+        'unknown'
+      ) AS model,
+      SUM(COALESCE(
+        CAST(json_extract(attributes, '$."gen_ai.usage.input_tokens"')  AS REAL),
+        CAST(json_extract(attributes, '$."llm.usage.prompt_tokens"')    AS REAL),
+        0
+      )) AS prompt_tokens,
+      SUM(COALESCE(
+        CAST(json_extract(attributes, '$."gen_ai.usage.output_tokens"')     AS REAL),
+        CAST(json_extract(attributes, '$."llm.usage.completion_tokens"')    AS REAL),
+        0
+      )) AS completion_tokens,
+      COUNT(*) AS call_count
+    FROM spans
+    WHERE service_name = ?
+      AND (
+        json_extract(attributes, '$."gen_ai.request.model"') IS NOT NULL
+        OR json_extract(attributes, '$."llm.model"') IS NOT NULL
+      )
+    GROUP BY model
+    ORDER BY (prompt_tokens + completion_tokens) DESC
+  `).all(serviceName);
+
+  // Tool calls for this service
+  const toolRows = db.prepare(`
+    SELECT
+      COALESCE(
+        json_extract(attributes, '$."gen_ai.tool.name"'),
+        json_extract(attributes, '$."tool.name"'),
+        json_extract(attributes, '$."tool_name"'),
+        name
+      ) AS tool_name,
+      COUNT(*)         AS count,
+      AVG(duration_ms) AS avg_duration_ms,
+      SUM(duration_ms) AS total_duration_ms,
+      SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count
+    FROM spans
+    WHERE service_name = ?
+      AND (
+        json_extract(attributes, '$."gen_ai.tool.name"') IS NOT NULL
+        OR json_extract(attributes, '$."tool.name"')     IS NOT NULL
+        OR json_extract(attributes, '$."tool_name"')     IS NOT NULL
+        OR name LIKE 'tool.%'
+        OR name LIKE 'tool:%'
+      )
+    GROUP BY tool_name
+    ORDER BY count DESC
+    LIMIT 25
+  `).all(serviceName);
+
+  return {
+    serviceName,
+    totalTraces:  Number(countRow?.['total_traces']  ?? 0),
+    totalSpans:   Number(countRow?.['total_spans']   ?? 0),
+    errorTraces:  Number(countRow?.['error_traces']  ?? 0),
+    errorSpans:   Number(countRow?.['error_spans']   ?? 0),
+    p50Ms: p50,
+    p95Ms: p95,
+    slowestOperations: slowestRows.map(r => ({
+      name:          String(r['name']          ?? ''),
+      avgDurationMs: round2(Number(r['avg_duration_ms'] ?? 0)),
+      maxDurationMs: round2(Number(r['max_duration_ms'] ?? 0)),
+      count:         Number(r['count']         ?? 0),
+      errorCount:    Number(r['error_count']   ?? 0),
+    })),
+    tokenUsage: tokenRows.map(r => {
+      const prompt     = Number(r['prompt_tokens']     ?? 0);
+      const completion = Number(r['completion_tokens'] ?? 0);
+      return {
+        model:            String(r['model'] ?? 'unknown'),
+        totalTokens:      Math.round(prompt + completion),
+        promptTokens:     Math.round(prompt),
+        completionTokens: Math.round(completion),
+        callCount:        Number(r['call_count'] ?? 0),
+      };
+    }),
+    toolCalls: toolRows.map(r => ({
+      toolName:        String(r['tool_name']        ?? ''),
+      count:           Number(r['count']            ?? 0),
+      avgDurationMs:   round2(Number(r['avg_duration_ms']   ?? 0)),
+      totalDurationMs: round2(Number(r['total_duration_ms'] ?? 0)),
+      errorCount:      Number(r['error_count']      ?? 0),
+    })),
+  };
+}
+
+function percentile(sorted: number[], p: number): number {
+  if (!sorted.length) { return 0; }
+  const idx = Math.floor(sorted.length * p);
+  return sorted[Math.min(idx, sorted.length - 1)] ?? 0;
+}
+
+function round2(n: number): number { return Math.round(n * 100) / 100; }

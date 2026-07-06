@@ -8,7 +8,7 @@
     "type": "git",
     "url": "https://github.com/michiisai/otel-insights"
   },
-  "engines": { "vscode": "^1.90.0" },
+  "engines": { "vscode": "^1.99.0" },
   "categories": ["Debuggers", "Other"],
   "keywords": ["opentelemetry", "otel", "tracing", "observability", "agents", "llm"],
   "activationEvents": ["onStartupFinished"],
@@ -23,6 +23,160 @@
       {
         "command": "otel-insights.clearData",
         "title": "OTel Insights: Clear All Data"
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "otel-insights_getServiceSummary",
+        "tags": ["otel", "observability", "agents", "performance", "comparison"],
+        "toolReferenceName": "otelService",
+        "displayName": "Get Service / Agent Summary",
+        "modelDescription": "Returns a full performance profile for a single service or agent, filtered by its service_name. Includes: trace count, error rate, p50/p95 latency, slowest operations, LLM token usage, and tool call stats — all scoped to that service. Call without a serviceName first to list available services. Use this to compare two agents (e.g. Codex vs Copilot) by calling it once per service and comparing the results. ALWAYS use this when the user asks why one agent is faster, slower, or uses more tokens than another.",
+        "userDescription": "Get a detailed telemetry breakdown for a specific service or agent.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(server)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "serviceName": {
+              "type": "string",
+              "description": "The service_name to filter by (e.g. 'codex', 'copilot'). Omit to list all available service names."
+            }
+          }
+        }
+      },
+      {
+        "name": "otel-insights_summarizeRecentActivity",
+        "tags": ["otel", "observability", "debugging"],
+        "toolReferenceName": "otelSummary",
+        "displayName": "Summarize Recent Activity",
+        "modelDescription": "ALWAYS call this tool first when the user asks about their application's health, status, performance, or telemetry in general. Returns a high-level summary: trace/span/log counts, error rate, p95 latency, LLM token usage, and tool call totals.",
+        "userDescription": "Get a quick health overview of your application's telemetry.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(pulse)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "otel-insights_findRecentErrors",
+        "tags": ["otel", "debugging", "errors"],
+        "toolReferenceName": "otelErrors",
+        "displayName": "Find Recent Errors",
+        "modelDescription": "ALWAYS call this tool when the user asks about errors, failures, exceptions, crashes, what broke, or recent problems. Returns the most recent error traces with errored span details including exception type and message.",
+        "userDescription": "Find the most recent error traces in your application.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(error)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "number",
+              "description": "Maximum number of error traces to return. Defaults to 5."
+            }
+          }
+        }
+      },
+      {
+        "name": "otel-insights_getErrorTrace",
+        "tags": ["otel", "debugging", "errors", "traces"],
+        "toolReferenceName": "otelTrace",
+        "displayName": "Get Error Trace Details",
+        "modelDescription": "Given a traceId (from findRecentErrors), returns the full span tree for that trace. Each span shows its status (OK/ERROR), kind, duration, parent relationship, and any notable attributes like exception details, HTTP method/URL/status, DB statements, and gen_ai attributes. Use this to drill into exactly which span failed and why.",
+        "userDescription": "Inspect the full span tree for a specific trace.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(search)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "traceId": {
+              "type": "string",
+              "description": "The trace ID to inspect. Obtain this from findRecentErrors."
+            }
+          },
+          "required": ["traceId"]
+        }
+      },
+      {
+        "name": "otel-insights_getSlowestSpans",
+        "tags": ["otel", "performance", "latency"],
+        "toolReferenceName": "otelSlow",
+        "displayName": "Get Slowest Spans",
+        "modelDescription": "ALWAYS call this tool when the user asks anything related to slowness or performance — including: 'why did it take so long', 'why is it slow', 'what's taking so long', 'why was it slow', 'it's too slow', 'slow response', 'slow request', 'slow tool call', 'slow agent', 'high latency', 'latency spike', 'timeout', 'lag', 'delay', 'bottleneck', 'performance problem', 'performance regression', 'what is the slowest', 'optimize', 'speed up'. This applies to questions about ANY system emitting telemetry — the user's app, agent, LLM calls, tool calls, or any traced operation. Returns the slowest operations aggregated by span name, sorted by average duration descending, with avg/max duration and error counts.",
+        "userDescription": "Find the slowest operations in your application.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(dashboard)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "limit": {
+              "type": "number",
+              "description": "Maximum number of operations to return. Defaults to 10."
+            }
+          }
+        }
+      },
+      {
+        "name": "otel-insights_searchLogs",
+        "tags": ["otel", "logs", "debugging"],
+        "toolReferenceName": "otelLogs",
+        "displayName": "Search Logs",
+        "modelDescription": "ALWAYS call this tool when the user asks about logs, log messages, log output, or wants to search for a specific message, error string, or keyword in logs.",
+        "userDescription": "Search your application logs for a keyword or phrase.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(list-unordered)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Text to search for in log body, service name, or severity."
+            },
+            "minSeverity": {
+              "type": "number",
+              "description": "Minimum OTLP severity number. 0=all, 9=INFO+, 13=WARN+, 17=ERROR+. Defaults to 0."
+            },
+            "limit": {
+              "type": "number",
+              "description": "Maximum number of log records to return. Defaults to 50."
+            }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "otel-insights_getTokenUsage",
+        "tags": ["otel", "llm", "tokens", "cost"],
+        "toolReferenceName": "otelTokens",
+        "displayName": "Get Token Usage",
+        "modelDescription": "Returns LLM token consumption grouped by model, using gen_ai.usage.input_tokens / gen_ai.usage.output_tokens span attributes (also supports llm.usage.* conventions). Shows total tokens, prompt tokens, completion tokens, call count, and output/input ratio per model. Use this to understand the cost and verbosity of your agent.",
+        "userDescription": "See how many tokens your LLM calls are consuming, broken down by model.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(symbol-numeric)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "otel-insights_getToolCallStats",
+        "tags": ["otel", "agents", "tools", "debugging"],
+        "toolReferenceName": "otelTools",
+        "displayName": "Get Tool Call Stats",
+        "modelDescription": "Returns statistics for every tool your agent has called, identified via gen_ai.tool.name or tool.name span attributes. Shows call count, error count, error rate, average duration, and total time per tool. Use this to find tools that are failing or taking too long.",
+        "userDescription": "See call counts, error rates, and durations for every tool your agent uses.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(tools)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
+    "chatSkills": [
+      {
+        "path": "./skills/otel-insights/SKILL.md"
       }
     ],
     "configuration": {

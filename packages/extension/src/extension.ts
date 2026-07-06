@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { TelemetryStore, OtlpReceiver } from '@otel-insights/receiver';
 import { OtelInsightsPanel } from './panel';
+import { registerTools } from './tools';
 
 let receiver: OtlpReceiver | undefined;
 let store: TelemetryStore | undefined;
@@ -45,6 +46,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       OtelInsightsPanel.currentPanel?.refresh();
     }),
   );
+
+  registerTools(context, store);
 }
 
 export async function deactivate(): Promise<void> {

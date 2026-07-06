@@ -1,0 +1,91 @@
+---
+name: otel-insights
+description: 'Query live OpenTelemetry telemetry collected by the OTel Insights VS Code extension. Use when: debugging errors, investigating slow operations, slow requests, high latency, performance problems, slow agent, slow app, slow tool calls, "why did it take so long", "why is it slow", "what is slow", timeouts, latency spikes, bottlenecks, reviewing LLM token usage, analyzing tool call stats, searching application logs, or comparing two agents/services. Requires the OTel Insights extension to be active and receiving OTLP data on port 4318.'
+---
+
+# OTel Insights — Telemetry Analysis
+
+Query traces, spans, metrics, and logs captured by the OTel Insights extension directly from the agent.
+
+## Trigger Rules
+
+ALWAYS call `otel-insights_getSlowestSpans` when the user asks about or mentions anything slow — including but not limited to:
+- slow requests, slow responses, slow tool calls, slow agent, slow app
+- high latency, latency spikes, timeouts, delays, lag, taking too long
+- performance problems, performance regression, bottleneck, throughput
+- "why is X slow", "what's taking so long", "speed up", "optimize"
+
+ALWAYS call `otel-insights_getServiceSummary` (once per service) when the user asks to compare two agents or services — e.g. "why is Codex faster than Copilot", "compare agent A vs agent B", "which service is slower". First call it without a `serviceName` to discover available service names, then call it for each service you want to compare.
+
+ALWAYS call `otel-insights_summarizeRecentActivity` first when the user asks about general app health, status, or "what's going on" without a specific focus.
+
+ALWAYS call `otel-insights_findRecentErrors` when the user asks about errors, failures, exceptions, crashes, or "what broke".
+
+ALWAYS call `otel-insights_searchLogs` when the user asks about logs or wants to find a specific message.
+
+ALWAYS call `otel-insights_getTokenUsage` when the user asks about token consumption, LLM cost, or model usage.
+
+ALWAYS call `otel-insights_getToolCallStats` when the user asks about tool call behavior, which tools are failing, or tool performance.
+
+## Prerequisites
+
+- The **OTel Insights** VS Code extension must be installed and active (status bar shows `● OTel :4318`).
+- Your application must be exporting OTLP/HTTP telemetry to `http://127.0.0.1:4318`.
+
+## Available Tools
+
+| Tool | Purpose | Key inputs |
+|------|---------|------------|
+| `otel-insights_summarizeRecentActivity` | High-level health overview — counts, error rate, p95 latency, token usage, tool calls | _(none)_ |
+| `otel-insights_getServiceSummary` | Full performance profile for one service/agent — error rate, p50/p95 latency, slowest ops, tokens, tool calls, all scoped to that service | `serviceName` (omit to list available services) |
+| `otel-insights_findRecentErrors` | List the most recent error traces with root cause span details | `limit` (default 5) |
+| `otel-insights_getErrorTrace` | Full span tree for one trace — all spans, attributes, exception details | `traceId` (required) |
+| `otel-insights_getSlowestSpans` | Slowest operations ranked by average duration (across all services) | `limit` (default 10) |
+| `otel-insights_getTokenUsage` | LLM token consumption per model — prompt vs. completion tokens, call count | _(none)_ |
+| `otel-insights_getToolCallStats` | Per-tool call counts, error rates, and average durations | _(none)_ |
+| `otel-insights_searchLogs` | Full-text log search with optional severity filter | `query` (required), `minSeverity` (0–24), `limit` (default 50) |
+
+## Severity Levels for `searchLogs`
+
+| `minSeverity` | Level |
+|--------------|-------|
+| 0 | All (UNSPECIFIED+) |
+| 9 | INFO+ |
+| 13 | WARN+ |
+| 17 | ERROR+ |
+| 21 | FATAL only |
+
+## Recommended Workflows
+
+### "Why is Codex faster than Copilot on this task?" (or any agent comparison)
+1. Call `otel-insights_getServiceSummary` with no `serviceName` to list available services.
+2. Call `otel-insights_getServiceSummary` for each agent (e.g. `"codex"` and `"copilot"`) — these can be parallel calls.
+3. Compare p50/p95 latency, token counts (input/output ratio), and tool call counts/durations across both results.
+4. Explain the difference: e.g. fewer tool calls, lower token usage, faster individual operations.
+
+### "Why is my app throwing errors?"
+1. Call `otel-insights_summarizeRecentActivity` for a health snapshot.
+2. Call `otel-insights_findRecentErrors` to list error traces.
+3. For any trace of interest, call `otel-insights_getErrorTrace` with its `traceId` to see the full span tree and exception details.
+
+### "What's slow?"
+1. Call `otel-insights_getSlowestSpans` to rank operations by average latency across all services.
+2. If you suspect one service is the culprit, call `otel-insights_getServiceSummary` for that service.
+3. Follow up with `otel-insights_getErrorTrace` if a slow operation also has errors.
+
+### "How many tokens is my agent consuming?"
+1. Call `otel-insights_getTokenUsage` — results are grouped by model across all services.
+2. To see token usage per agent/service, call `otel-insights_getServiceSummary` for each service.
+3. Call `otel-insights_getToolCallStats` to see which tools are called most and which are failing.
+
+### "Search for a specific log message"
+1. Call `otel-insights_searchLogs` with a `query` string (substring match on log body).
+2. If a log has a `traceId`, call `otel-insights_getErrorTrace` to get the full context.
+
+## Notes
+
+- All timestamps are in nanoseconds (Unix epoch) and are converted to ISO strings in tool output.
+- Stack traces in `exception.stacktrace` are truncated to 300 characters in `getErrorTrace` output.
+- Token usage requires spans with `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` attributes.
+- Tool call stats require spans with `gen_ai.tool.name` or `tool.name` attributes.
+- Service/agent names come from the `service_name` field set in your OTLP resource attributes (`service.name`).
