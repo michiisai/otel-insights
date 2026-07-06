@@ -143,26 +143,6 @@
         }
       },
       {
-        "name": "otel-insights_getErrorTrace",
-        "tags": ["otel", "debugging", "errors", "traces"],
-        "toolReferenceName": "otelTrace",
-        "displayName": "Get Error Trace Details",
-        "modelDescription": "Given a traceId (from findRecentErrors), returns the full span tree for that trace. Each span shows its status (OK/ERROR), kind, duration, parent relationship, and any notable attributes like exception details, HTTP method/URL/status, DB statements, and gen_ai attributes. Use this to drill into exactly which span failed and why.",
-        "userDescription": "Inspect the full span tree for a specific trace.",
-        "canBeReferencedInPrompt": true,
-        "icon": "$(search)",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "traceId": {
-              "type": "string",
-              "description": "The trace ID to inspect. Obtain this from findRecentErrors."
-            }
-          },
-          "required": ["traceId"]
-        }
-      },
-      {
         "name": "otel-insights_getSlowestSpans",
         "tags": ["otel", "performance", "latency"],
         "toolReferenceName": "otelSlow",

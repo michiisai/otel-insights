@@ -121,7 +121,7 @@ class FindRecentErrorsTool implements vscode.LanguageModelTool<FindRecentErrorsI
       lines.push('');
     }
 
-    lines.push('To inspect the full span tree for a trace, call getErrorTrace with its traceId.');
+    lines.push('To inspect the full span tree for a trace, call getTrace with its traceId.');
 
     return new vscode.LanguageModelToolResult([
       new vscode.LanguageModelTextPart(lines.join('\n')),
@@ -141,74 +141,6 @@ const NOTABLE_ATTRS = [
   'db.system', 'db.statement',
   'rpc.method', 'rpc.service',
 ];
-
-class GetErrorTraceTool implements vscode.LanguageModelTool<GetErrorTraceInput> {
-  constructor(private readonly store: TelemetryStore) {}
-
-  async invoke(
-    options: vscode.LanguageModelToolInvocationOptions<GetErrorTraceInput>,
-    _token: vscode.CancellationToken,
-  ): Promise<vscode.LanguageModelToolResult> {
-    const { traceId } = options.input;
-    if (!traceId?.trim()) {
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart('Error: traceId is required.'),
-      ]);
-    }
-
-    const spans = getSpansByTraceId(this.store.getDb(), traceId.trim());
-
-    if (!spans.length) {
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(`No spans found for traceId: ${traceId}`),
-      ]);
-    }
-
-    const tokensByModel = aggregateTokens(spans);
-
-    const lines: string[] = [`# Trace: ${traceId}\n${spans.length} span(s)\n`];
-
-    if (tokensByModel.length) {
-      lines.push('## Token Usage');
-      for (const t of tokensByModel) {
-        const ratio = t.promptTokens > 0
-          ? (t.completionTokens / t.promptTokens).toFixed(2)
-          : 'N/A';
-        lines.push(`- **${t.model}**: ${t.totalTokens} tokens (${t.promptTokens} in / ${t.completionTokens} out, ratio ${ratio}) across ${t.callCount} LLM call(s)`);
-      }
-      lines.push('');
-    }
-
-    for (const s of spans) {
-      const isError = s.statusCode === 2;
-      const prefix = isError ? '❌' : '  ';
-      const status = SPAN_STATUS[s.statusCode] ?? String(s.statusCode);
-      const kind   = SPAN_KIND[s.kind] ?? String(s.kind);
-
-      lines.push(`${prefix} [${status}] ${s.name}  (${kind}, ${s.durationMs}ms)`);
-      lines.push(`   spanId: ${s.spanId}${s.parentSpanId ? ` | parent: ${s.parentSpanId}` : ' | ROOT'}`);
-      lines.push(`   started: ${nanoToDate(s.startTimeUnixNano)}`);
-
-      if (isError && s.statusMessage) {
-        lines.push(`   status message: ${s.statusMessage}`);
-      }
-
-      for (const key of NOTABLE_ATTRS) {
-        const val = s.attributes[key];
-        if (val != null) {
-          const str = String(val);
-          // Truncate long values such as stack traces
-          lines.push(`   ${key}: ${str.length > 300 ? str.slice(0, 300) + '…' : str}`);
-        }
-      }
-      lines.push('');
-    }
-
-    return new vscode.LanguageModelToolResult([
-      new vscode.LanguageModelTextPart(lines.join('\n')),
-    ]);
-  }
-}
 
 class GetTokenUsageTool implements vscode.LanguageModelTool<{ since?: string }> {
   constructor(private readonly store: TelemetryStore) {}
@@ -462,7 +394,7 @@ class SummarizeRecentActivityTool implements vscode.LanguageModelTool<{ since?: 
 
     lines.push(
       '\n---\n' +
-      'For deeper analysis use: findRecentErrors, getErrorTrace, getSlowestSpans, ' +
+      'For deeper analysis use: findRecentErrors, getTrace, getSlowestSpans, ' +
       'searchLogs, getTokenUsage, getToolCallStats.',
     );
 
@@ -720,7 +652,6 @@ export function registerTools(
 ): void {
   context.subscriptions.push(
     vscode.lm.registerTool('otel-insights_findRecentErrors',     new FindRecentErrorsTool(store)),
-    vscode.lm.registerTool('otel-insights_getErrorTrace',        new GetErrorTraceTool(store)),
     vscode.lm.registerTool('otel-insights_getTokenUsage',        new GetTokenUsageTool(store)),
     vscode.lm.registerTool('otel-insights_getToolCallStats',     new GetToolCallStatsTool(store)),
     vscode.lm.registerTool('otel-insights_getSlowestSpans',      new GetSlowestSpansTool(store)),
