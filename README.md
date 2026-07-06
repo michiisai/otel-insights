@@ -1,6 +1,26 @@
 # OTel Insights
 
-A VS Code extension that brings **OpenTelemetry agent telemetry** — traces, metrics, and logs — directly into the editor. No more context-switching to Jaeger, Grafana, or the terminal.
+<style>
+a {
+    text-decoration: none;
+    color: #464feb;
+}
+tr th, tr td {
+    border: 1px solid #e6e6e6;
+}
+tr th {
+    background-color: #f5f5f5;
+}
+</style>
+
+This extension brings **OpenTelemetry** traces, logs, and metrics directly into the editor, helping developers investigate failures, analyze performance, and understand agent or application behavior in real time.
+
+Explore trace trees, inspect tool calls, identify slow operations, correlate logs with spans, and answer questions like:
+
+- Why did this run fail?
+- Why was this task slow?
+- What happened during this session?
+- Which operations and services consumed the most time or tokens?
 
 ## Architecture
 
