@@ -1,6 +1,6 @@
 # OTel Insights
 
-This extension brings **OpenTelemetry** traces, logs, and metrics directly into the editor, helping developers investigate failures, analyze performance, and understand agent or application behavior in real time.
+This extension brings **OpenTelemetry** traces, logs, and metrics directly into the editor, helping developers investigate failures, analyze performance, and understand agent behavior in real time.
 
 Explore trace trees, inspect tool calls, identify slow operations, correlate logs with spans, and answer questions like:
 
@@ -93,8 +93,8 @@ Data persists across VS Code restarts. Use **Clear All Data** to wipe it.
 
 ## Roadmap
 
-- [ ] MCP server to expose telemetry to AI agents
 - [ ] Timeline / waterfall chart for traces
-- [ ] Alerting rules on error rate / latency
 - [ ] Multi-service filtering
+- [ ] Alerting rules on error rate / latency
 - [ ] Export to JSON / CSV
+- [ ] MCP server to expose telemetry to AI agents
