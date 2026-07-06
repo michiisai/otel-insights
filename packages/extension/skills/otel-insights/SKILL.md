@@ -25,7 +25,9 @@ ALWAYS call `otel-insights_searchLogs` when the user asks about logs or wants to
 
 ALWAYS call `otel-insights_getTokenUsage` when the user asks about token consumption, LLM cost, or model usage.
 
-ALWAYS call `otel-insights_getToolCallStats` when the user asks about tool call behavior, which tools are failing, or tool performance.
+ALWAYS call `otel-insights_listTraces` when the user wants to browse, list, or find traces — e.g. "show me recent traces", "what ran in the last hour", "list traces for service X", "find a trace".
+
+ALWAYS call `otel-insights_getTrace` when the user wants to inspect a specific trace by ID, understand what happened in a run, or drill into spans — for any trace (not just errors).
 
 ## Prerequisites
 
@@ -37,9 +39,11 @@ ALWAYS call `otel-insights_getToolCallStats` when the user asks about tool call 
 | Tool | Purpose | Key inputs |
 |------|---------|------------|
 | `otel-insights_summarizeRecentActivity` | High-level health overview — counts, error rate, p95 latency, token usage, tool calls | `since` |
+| `otel-insights_listTraces` | Browse recent traces — traceId, root span name, service, time, duration, error flag | `serviceName`, `since`, `limit` (default 20), `errorsOnly` |
+| `otel-insights_getTrace` | Full span tree for any traceId — status, kind, duration, attributes for every span | `traceId` (required) |
 | `otel-insights_getServiceSummary` | Full performance profile for one service/agent — error rate, p50/p95 latency, slowest ops, tokens, tool calls, all scoped to that service | `serviceName`, `since` |
 | `otel-insights_findRecentErrors` | List the most recent error traces with root cause span details | `limit` (default 5), `since` |
-| `otel-insights_getErrorTrace` | Full span tree for one trace — all spans, attributes, exception details | `traceId` (required) |
+| `otel-insights_getErrorTrace` | Full span tree for one trace — surfaced via the error workflow (use getTrace for non-error traces) | `traceId` (required) |
 | `otel-insights_getSlowestSpans` | Slowest operations ranked by average duration (across all services) | `limit` (default 10), `since` |
 | `otel-insights_getTokenUsage` | LLM token consumption per model — prompt vs. completion tokens, call count | `since` |
 | `otel-insights_getToolCallStats` | Per-tool call counts, error rates, and average durations | `since` |
@@ -77,7 +81,12 @@ When omitted, tools return data across all stored telemetry.
 3. Compare p50/p95 latency, token counts (input/output ratio), and tool call counts/durations across both results.
 4. Explain the difference: e.g. fewer tool calls, lower token usage, faster individual operations.
 
-### "Why is my app throwing errors?"
+### "Show me recent traces" / "What happened during this run?"
+1. Call `otel-insights_listTraces` — optionally pass `serviceName` or `since` to narrow down.
+2. For any trace of interest, call `otel-insights_getTrace` with its `traceId` for the full span tree.
+3. If the trace has errors, the span tree will highlight them with ❌ and surface exception details.
+
+
 1. Call `otel-insights_summarizeRecentActivity` for a health snapshot.
 2. Call `otel-insights_findRecentErrors` to list error traces.
 3. For any trace of interest, call `otel-insights_getErrorTrace` with its `traceId` to see the full span tree and exception details.

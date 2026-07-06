@@ -3,6 +3,7 @@ import type { TelemetryStore } from '@otel-insights/receiver';
 import {
   getRecentErrorTraces,
   getSpansByTraceId,
+  getTraces,
   getMetricsData,
   getLogs,
   getServiceNames,
@@ -35,6 +36,49 @@ const SPAN_KIND: Record<number, string> = {
 };
 
 const SPAN_STATUS: Record<number, string> = { 0: 'UNSET', 1: 'OK', 2: 'ERROR' };
+
+interface TokenSummary {
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  callCount: number;
+}
+
+/** Aggregate gen_ai / llm token attributes across a set of spans, grouped by model. */
+function aggregateTokens(spans: { attributes: Record<string, unknown> }[]): TokenSummary[] {
+  const byModel = new Map<string, TokenSummary>();
+
+  for (const s of spans) {
+    const a = s.attributes;
+    const model = String(
+      a['gen_ai.request.model'] ?? a['llm.model'] ?? ''
+    );
+    const prompt = Number(a['gen_ai.usage.input_tokens'] ?? a['llm.usage.prompt_tokens'] ?? 0);
+    const completion = Number(a['gen_ai.usage.output_tokens'] ?? a['llm.usage.completion_tokens'] ?? 0);
+
+    if (!model && prompt === 0 && completion === 0) { continue; }
+
+    const key = model || 'unknown';
+    const existing = byModel.get(key);
+    if (existing) {
+      existing.promptTokens     += prompt;
+      existing.completionTokens += completion;
+      existing.totalTokens      += prompt + completion;
+      existing.callCount        += 1;
+    } else {
+      byModel.set(key, {
+        model: key,
+        promptTokens:     prompt,
+        completionTokens: completion,
+        totalTokens:      prompt + completion,
+        callCount:        1,
+      });
+    }
+  }
+
+  return [...byModel.values()].sort((a, b) => b.totalTokens - a.totalTokens);
+}
 
 
 interface FindRecentErrorsInput {
@@ -120,7 +164,20 @@ class GetErrorTraceTool implements vscode.LanguageModelTool<GetErrorTraceInput> 
       ]);
     }
 
+    const tokensByModel = aggregateTokens(spans);
+
     const lines: string[] = [`# Trace: ${traceId}\n${spans.length} span(s)\n`];
+
+    if (tokensByModel.length) {
+      lines.push('## Token Usage');
+      for (const t of tokensByModel) {
+        const ratio = t.promptTokens > 0
+          ? (t.completionTokens / t.promptTokens).toFixed(2)
+          : 'N/A';
+        lines.push(`- **${t.model}**: ${t.totalTokens} tokens (${t.promptTokens} in / ${t.completionTokens} out, ratio ${ratio}) across ${t.callCount} LLM call(s)`);
+      }
+      lines.push('');
+    }
 
     for (const s of spans) {
       const isError = s.statusCode === 2;
@@ -514,6 +571,149 @@ class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummar
   }
 }
 
+interface ListTracesInput {
+  serviceName?: string;
+  since?: string;
+  limit?: number;
+  errorsOnly?: boolean;
+}
+
+class ListTracesTool implements vscode.LanguageModelTool<ListTracesInput> {
+  constructor(private readonly store: TelemetryStore) {}
+
+  async invoke(
+    options: vscode.LanguageModelToolInvocationOptions<ListTracesInput>,
+    _token: vscode.CancellationToken,
+  ): Promise<vscode.LanguageModelToolResult> {
+    const { serviceName, errorsOnly = false } = options.input;
+    const limit     = options.input.limit ?? 20;
+    const sinceNano = parseSinceNano(options.input.since);
+
+    let traces = getTraces(
+      this.store.getDb(),
+      limit,
+      sinceNano ?? undefined,
+      serviceName?.trim() || undefined,
+    );
+
+    if (errorsOnly) { traces = traces.filter(t => t.hasError); }
+
+    if (!traces.length) {
+      const qualifiers: string[] = [];
+      if (serviceName) { qualifiers.push(`service "${serviceName}"`); }
+      if (sinceNano)   { qualifiers.push(`the requested time window`); }
+      if (errorsOnly)  { qualifiers.push(`errors only`); }
+      const qualifier = qualifiers.length ? ` for ${qualifiers.join(', ')}` : '';
+      return new vscode.LanguageModelToolResult([
+        new vscode.LanguageModelTextPart(`No traces found${qualifier}.`),
+      ]);
+    }
+
+    const header = [
+      `# Traces (${traces.length} shown, most recent first)`,
+      serviceName ? `Service: ${serviceName}` : '',
+      options.input.since ? `Since: ${options.input.since}` : '',
+    ].filter(Boolean).join(' · ') + '\n';
+
+    const lines: string[] = [header];
+
+    for (const t of traces) {
+      const status  = t.hasError ? '❌' : '✅';
+      const time    = nanoToDate(t.startTimeUnixNano);
+      lines.push(`${status} **${t.rootSpanName}** [${t.serviceName}]`);
+      lines.push(`   traceId: ${t.traceId}`);
+      lines.push(`   time: ${time} | duration: ${t.durationMs}ms | spans: ${t.spanCount}`);
+      lines.push('');
+    }
+
+    lines.push('To inspect the full span tree for a trace, call getTrace with its traceId.');
+
+    return new vscode.LanguageModelToolResult([
+      new vscode.LanguageModelTextPart(lines.join('\n')),
+    ]);
+  }
+}
+
+interface GetTraceInput {
+  traceId: string;
+}
+
+class GetTraceTool implements vscode.LanguageModelTool<GetTraceInput> {
+  constructor(private readonly store: TelemetryStore) {}
+
+  async invoke(
+    options: vscode.LanguageModelToolInvocationOptions<GetTraceInput>,
+    _token: vscode.CancellationToken,
+  ): Promise<vscode.LanguageModelToolResult> {
+    const { traceId } = options.input;
+    if (!traceId?.trim()) {
+      return new vscode.LanguageModelToolResult([
+        new vscode.LanguageModelTextPart('Error: traceId is required.'),
+      ]);
+    }
+
+    const spans = getSpansByTraceId(this.store.getDb(), traceId.trim());
+
+    if (!spans.length) {
+      return new vscode.LanguageModelToolResult([
+        new vscode.LanguageModelTextPart(`No spans found for traceId: ${traceId}`),
+      ]);
+    }
+
+    const root = spans.find(s => !s.parentSpanId) ?? spans[0]!;
+    const hasErrors = spans.some(s => s.statusCode === 2);
+
+    // Aggregate token usage across all LLM spans in this trace
+    const tokensByModel = aggregateTokens(spans);
+
+    const lines: string[] = [
+      `# Trace: ${traceId}`,
+      `Service: ${root.serviceName} | Root: ${root.name} | Duration: ${root.durationMs}ms | Spans: ${spans.length}${hasErrors ? ' | ❌ Has errors' : ' | ✅ No errors'}`,
+      '',
+    ];
+
+    if (tokensByModel.length) {
+      lines.push('## Token Usage');
+      for (const t of tokensByModel) {
+        const ratio = t.promptTokens > 0
+          ? (t.completionTokens / t.promptTokens).toFixed(2)
+          : 'N/A';
+        lines.push(`- **${t.model}**: ${t.totalTokens} tokens (${t.promptTokens} in / ${t.completionTokens} out, ratio ${ratio}) across ${t.callCount} LLM call(s)`);
+      }
+      lines.push('');
+    }
+
+    for (const s of spans) {
+      const isError = s.statusCode === 2;
+      const prefix  = isError ? '❌' : '  ';
+      const status  = SPAN_STATUS[s.statusCode] ?? String(s.statusCode);
+      const kind    = SPAN_KIND[s.kind] ?? String(s.kind);
+      const indent  = s.parentSpanId ? '  ' : '';
+
+      lines.push(`${indent}${prefix} [${status}] ${s.name}  (${kind}, ${s.durationMs}ms)`);
+      lines.push(`${indent}   spanId: ${s.spanId}${s.parentSpanId ? ` | parent: ${s.parentSpanId}` : ' | ROOT'}`);
+      lines.push(`${indent}   started: ${nanoToDate(s.startTimeUnixNano)}`);
+
+      if (isError && s.statusMessage) {
+        lines.push(`${indent}   status message: ${s.statusMessage}`);
+      }
+
+      for (const key of NOTABLE_ATTRS) {
+        const val = s.attributes[key];
+        if (val != null) {
+          const str = String(val);
+          lines.push(`${indent}   ${key}: ${str.length > 300 ? str.slice(0, 300) + '…' : str}`);
+        }
+      }
+      lines.push('');
+    }
+
+    return new vscode.LanguageModelToolResult([
+      new vscode.LanguageModelTextPart(lines.join('\n')),
+    ]);
+  }
+}
+
 export function registerTools(
   context: vscode.ExtensionContext,
   store: TelemetryStore,
@@ -527,5 +727,7 @@ export function registerTools(
     vscode.lm.registerTool('otel-insights_searchLogs',           new SearchLogsTool(store)),
     vscode.lm.registerTool('otel-insights_summarizeRecentActivity', new SummarizeRecentActivityTool(store)),
     vscode.lm.registerTool('otel-insights_getServiceSummary',    new GetServiceSummaryTool(store)),
+    vscode.lm.registerTool('otel-insights_listTraces',           new ListTracesTool(store)),
+    vscode.lm.registerTool('otel-insights_getTrace',             new GetTraceTool(store)),
   );
 }
