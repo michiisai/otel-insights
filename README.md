@@ -1,18 +1,5 @@
 # OTel Insights
 
-<style>
-a {
-    text-decoration: none;
-    color: #464feb;
-}
-tr th, tr td {
-    border: 1px solid #e6e6e6;
-}
-tr th {
-    background-color: #f5f5f5;
-}
-</style>
-
 This extension brings **OpenTelemetry** traces, logs, and metrics directly into the editor, helping developers investigate failures, analyze performance, and understand agent or application behavior in real time.
 
 Explore trace trees, inspect tool calls, identify slow operations, correlate logs with spans, and answer questions like:
