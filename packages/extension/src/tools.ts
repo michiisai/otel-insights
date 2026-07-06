@@ -142,7 +142,7 @@ const NOTABLE_ATTRS = [
   'rpc.method', 'rpc.service',
 ];
 
-class GetTokenUsageTool implements vscode.LanguageModelTool<{ since?: string }> {
+class GetAgentMetricsTool implements vscode.LanguageModelTool<{ since?: string }> {
   constructor(private readonly store: TelemetryStore) {}
 
   async invoke(
@@ -150,76 +150,54 @@ class GetTokenUsageTool implements vscode.LanguageModelTool<{ since?: string }> 
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
     const sinceNano = parseSinceNano(options.input.since);
-    const { tokenUsage } = getMetricsData(this.store.getDb(), sinceNano ?? undefined);
+    const { tokenUsage, toolCalls } = getMetricsData(this.store.getDb(), sinceNano ?? undefined);
 
-    if (!tokenUsage.length) {
+    const hasTokens = tokenUsage.length > 0;
+    const hasTools  = toolCalls.length > 0;
+
+    if (!hasTokens && !hasTools) {
       return new vscode.LanguageModelToolResult([
         new vscode.LanguageModelTextPart(
-          'No token usage data found. Make sure your LLM spans include ' +
-          'gen_ai.usage.input_tokens / gen_ai.usage.output_tokens attributes.',
+          'No agent metrics found. Make sure your LLM spans include ' +
+          'gen_ai.usage.input_tokens / gen_ai.usage.output_tokens (token usage) ' +
+          'and gen_ai.tool.name or tool.name (tool calls).',
         ),
       ]);
     }
 
-    const grandTotal = tokenUsage.reduce((s, r) => s + r.totalTokens, 0);
-    const lines: string[] = [
-      `# Token Usage\nTotal across all models: ${grandTotal.toLocaleString()} tokens\n`,
-    ];
+    const lines: string[] = ['# Agent Metrics\n'];
 
-    for (const r of tokenUsage) {
-      const ratio = r.promptTokens > 0
-        ? (r.completionTokens / r.promptTokens).toFixed(2)
-        : 'N/A';
-      lines.push(`## ${r.model}`);
-      lines.push(`- Calls: ${r.callCount}`);
-      lines.push(`- Total tokens: ${r.totalTokens.toLocaleString()}`);
-      lines.push(`- Prompt (input): ${r.promptTokens.toLocaleString()}`);
-      lines.push(`- Completion (output): ${r.completionTokens.toLocaleString()}`);
-      lines.push(`- Output/input ratio: ${ratio}`);
-      lines.push('');
+    if (hasTokens) {
+      const grandTotal = tokenUsage.reduce((s, r) => s + r.totalTokens, 0);
+      lines.push(`## Token Usage — ${grandTotal.toLocaleString()} tokens total\n`);
+      for (const r of tokenUsage) {
+        const ratio = r.promptTokens > 0
+          ? (r.completionTokens / r.promptTokens).toFixed(2)
+          : 'N/A';
+        lines.push(`### ${r.model}`);
+        lines.push(`- Calls: ${r.callCount}`);
+        lines.push(`- Total: ${r.totalTokens.toLocaleString()} (${r.promptTokens.toLocaleString()} in / ${r.completionTokens.toLocaleString()} out, ratio ${ratio})`);
+        lines.push('');
+      }
+    } else {
+      lines.push('_No token usage data. Ensure LLM spans carry gen_ai.usage.input_tokens / output_tokens._\n');
     }
 
-    return new vscode.LanguageModelToolResult([
-      new vscode.LanguageModelTextPart(lines.join('\n')),
-    ]);
-  }
-}
-
-class GetToolCallStatsTool implements vscode.LanguageModelTool<{ since?: string }> {
-  constructor(private readonly store: TelemetryStore) {}
-
-  async invoke(
-    options: vscode.LanguageModelToolInvocationOptions<{ since?: string }>,
-    _token: vscode.CancellationToken,
-  ): Promise<vscode.LanguageModelToolResult> {
-    const sinceNano = parseSinceNano(options.input.since);
-    const { toolCalls } = getMetricsData(this.store.getDb(), sinceNano ?? undefined);
-
-    if (!toolCalls.length) {
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(
-          'No tool call data found. Make sure your agent spans include ' +
-          'gen_ai.tool.name or tool.name attributes.',
-        ),
-      ]);
-    }
-
-    const totalCalls  = toolCalls.reduce((s, r) => s + r.count, 0);
-    const totalErrors = toolCalls.reduce((s, r) => s + r.errorCount, 0);
-    const overallErrorPct = ((totalErrors / totalCalls) * 100).toFixed(1);
-
-    const lines: string[] = [
-      `# Tool Call Stats\n` +
-      `Total calls: ${totalCalls} | Errors: ${totalErrors} (${overallErrorPct}% error rate)\n`,
-    ];
-
-    for (const r of toolCalls) {
-      const errorPct = r.count > 0 ? ((r.errorCount / r.count) * 100).toFixed(1) : '0.0';
-      const flag = r.errorCount > 0 ? '⚠️' : '✅';
-      lines.push(`${flag} **${r.toolName}**`);
-      lines.push(`- Calls: ${r.count} | Errors: ${r.errorCount} (${errorPct}%)`);
-      lines.push(`- Avg duration: ${r.avgDurationMs}ms | Total time: ${r.totalDurationMs}ms`);
-      lines.push('');
+    if (hasTools) {
+      const totalCalls  = toolCalls.reduce((s, r) => s + r.count, 0);
+      const totalErrors = toolCalls.reduce((s, r) => s + r.errorCount, 0);
+      const overallErrorPct = ((totalErrors / totalCalls) * 100).toFixed(1);
+      lines.push(`## Tool Calls — ${totalCalls} total | ${totalErrors} errors (${overallErrorPct}%)\n`);
+      for (const r of toolCalls) {
+        const errorPct = r.count > 0 ? ((r.errorCount / r.count) * 100).toFixed(1) : '0.0';
+        const flag = r.errorCount > 0 ? '⚠️' : '✅';
+        lines.push(`${flag} **${r.toolName}**`);
+        lines.push(`- Calls: ${r.count} | Errors: ${r.errorCount} (${errorPct}%)`);
+        lines.push(`- Avg duration: ${r.avgDurationMs}ms | Total time: ${r.totalDurationMs}ms`);
+        lines.push('');
+      }
+    } else {
+      lines.push('_No tool call data. Ensure agent spans carry gen_ai.tool.name or tool.name._\n');
     }
 
     return new vscode.LanguageModelToolResult([
@@ -395,7 +373,7 @@ class SummarizeRecentActivityTool implements vscode.LanguageModelTool<{ since?: 
     lines.push(
       '\n---\n' +
       'For deeper analysis use: findRecentErrors, getTrace, getSlowestSpans, ' +
-      'searchLogs, getTokenUsage, getToolCallStats.',
+      'searchLogs, getAgentMetrics, getServiceSummary.',
     );
 
     return new vscode.LanguageModelToolResult([
@@ -652,8 +630,7 @@ export function registerTools(
 ): void {
   context.subscriptions.push(
     vscode.lm.registerTool('otel-insights_findRecentErrors',     new FindRecentErrorsTool(store)),
-    vscode.lm.registerTool('otel-insights_getTokenUsage',        new GetTokenUsageTool(store)),
-    vscode.lm.registerTool('otel-insights_getToolCallStats',     new GetToolCallStatsTool(store)),
+    vscode.lm.registerTool('otel-insights_getAgentMetrics',      new GetAgentMetricsTool(store)),
     vscode.lm.registerTool('otel-insights_getSlowestSpans',      new GetSlowestSpansTool(store)),
     vscode.lm.registerTool('otel-insights_searchLogs',           new SearchLogsTool(store)),
     vscode.lm.registerTool('otel-insights_summarizeRecentActivity', new SummarizeRecentActivityTool(store)),

@@ -198,33 +198,14 @@
         }
       },
       {
-        "name": "otel-insights_getTokenUsage",
-        "tags": ["otel", "llm", "tokens", "cost"],
-        "toolReferenceName": "otelTokens",
-        "displayName": "Get Token Usage",
-        "modelDescription": "Returns LLM token consumption grouped by model, using gen_ai.usage.input_tokens / gen_ai.usage.output_tokens span attributes (also supports llm.usage.* conventions). Shows total tokens, prompt tokens, completion tokens, call count, and output/input ratio per model. Use this to understand the cost and verbosity of your agent.",
-        "userDescription": "See how many tokens your LLM calls are consuming, broken down by model.",
+        "name": "otel-insights_getAgentMetrics",
+        "tags": ["otel", "llm", "tokens", "cost", "agents", "tools", "debugging"],
+        "toolReferenceName": "otelAgentMetrics",
+        "displayName": "Get Agent Metrics",
+        "modelDescription": "Returns both LLM token usage and tool call statistics in a single call. Token usage is grouped by model and shows prompt/completion tokens, call count, and output/input ratio. Tool call stats show call count, error rate, and average duration per tool. ALWAYS call this when the user asks about token consumption, LLM cost, model usage, tool call behavior, which tools are failing, or tool performance.",
+        "userDescription": "See token usage and tool call stats for your agent.",
         "canBeReferencedInPrompt": true,
-        "icon": "$(symbol-numeric)",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "since": {
-              "type": "string",
-              "description": "Only include spans after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
-            }
-          }
-        }
-      },
-      {
-        "name": "otel-insights_getToolCallStats",
-        "tags": ["otel", "agents", "tools", "debugging"],
-        "toolReferenceName": "otelTools",
-        "displayName": "Get Tool Call Stats",
-        "modelDescription": "Returns statistics for every tool your agent has called, identified via gen_ai.tool.name or tool.name span attributes. Shows call count, error count, error rate, average duration, and total time per tool. Use this to find tools that are failing or taking too long.",
-        "userDescription": "See call counts, error rates, and durations for every tool your agent uses.",
-        "canBeReferencedInPrompt": true,
-        "icon": "$(tools)",
+        "icon": "$(pulse)",
         "inputSchema": {
           "type": "object",
           "properties": {

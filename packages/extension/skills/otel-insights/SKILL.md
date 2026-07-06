@@ -23,7 +23,7 @@ ALWAYS call `otel-insights_findRecentErrors` when the user asks about errors, fa
 
 ALWAYS call `otel-insights_searchLogs` when the user asks about logs or wants to find a specific message.
 
-ALWAYS call `otel-insights_getTokenUsage` when the user asks about token consumption, LLM cost, or model usage.
+ALWAYS call `otel-insights_getAgentMetrics` when the user asks about token consumption, LLM cost, model usage, tool call behavior, which tools are failing, or tool performance.
 
 ALWAYS call `otel-insights_listTraces` when the user wants to browse, list, or find traces — e.g. "show me recent traces", "what ran in the last hour", "list traces for service X", "find a trace".
 
@@ -44,8 +44,7 @@ ALWAYS call `otel-insights_getTrace` when the user wants to inspect a specific t
 | `otel-insights_getServiceSummary` | Full performance profile for one service/agent — error rate, p50/p95 latency, slowest ops, tokens, tool calls, all scoped to that service | `serviceName`, `since` |
 | `otel-insights_findRecentErrors` | List the most recent error traces with root cause span details | `limit` (default 5), `since` |
 | `otel-insights_getSlowestSpans` | Slowest operations ranked by average duration (across all services) | `limit` (default 10), `since` |
-| `otel-insights_getTokenUsage` | LLM token consumption per model — prompt vs. completion tokens, call count | `since` |
-| `otel-insights_getToolCallStats` | Per-tool call counts, error rates, and average durations | `since` |
+| `otel-insights_getAgentMetrics` | LLM token usage per model + tool call counts, error rates, and durations — both in one call | `since` |
 | `otel-insights_searchLogs` | Full-text log search with optional severity filter | `query` (required), `minSeverity` (0–24), `limit` (default 50), `since` |
 
 ## Time Filtering (`since` parameter)
@@ -96,10 +95,9 @@ When omitted, tools return data across all stored telemetry.
 3. Follow up with `otel-insights_getTrace` on a slow trace to see exactly where time was spent.
 
 ### "How many tokens is my agent consuming?"
-1. Call `otel-insights_getTokenUsage` — results are grouped by model across all services.
-2. To see token usage per agent/service, call `otel-insights_getServiceSummary` for each service.
+1. Call `otel-insights_getAgentMetrics` — token usage grouped by model, plus tool call counts and error rates.
+2. To see token usage and tool calls per agent/service, call `otel-insights_getServiceSummary` for each service.
 3. To see token usage for a specific run, call `otel-insights_getTrace` with the run's traceId.
-4. Call `otel-insights_getToolCallStats` to see which tools are called most and which are failing.
 
 ### "Search for a specific log message"
 1. Call `otel-insights_searchLogs` with a `query` string (substring match on log body).
