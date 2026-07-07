@@ -13,10 +13,12 @@ export interface ErrorTrace extends Trace {
   errorSpans: ErrorSpanSummary[];
 }
 
-export function getRecentErrorTraces(db: QueryableDB, limit = 10, sinceNano?: string): ErrorTrace[] {
+export function getRecentErrorTraces(db: QueryableDB, limit = 10, sinceNano?: string, untilNano?: string): ErrorTrace[] {
   const havingParts = ['SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0'];
-  if (sinceNano) { havingParts.push('MIN(start_time_unix_nano) >= ?'); }
-  const params: unknown[] = sinceNano ? [sinceNano, limit] : [limit];
+  const params: unknown[] = [];
+  if (sinceNano) { havingParts.push('MIN(start_time_unix_nano) >= ?'); params.push(sinceNano); }
+  if (untilNano) { havingParts.push('MIN(start_time_unix_nano) <= ?'); params.push(untilNano); }
+  params.push(limit);
 
   const traceRows = db.prepare(`
     SELECT

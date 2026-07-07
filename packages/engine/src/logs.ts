@@ -5,10 +5,11 @@ export interface LogQueryOptions {
   minSeverity?: number;
   limit?: number;
   sinceNano?: string;
+  untilNano?: string;
 }
 
 export function getLogs(db: QueryableDB, opts: LogQueryOptions = {}): LogRecord[] {
-  const { filter = '', minSeverity = 0, limit = 500, sinceNano } = opts;
+  const { filter = '', minSeverity = 0, limit = 500, sinceNano, untilNano } = opts;
 
   // severity_number 0 = UNSPECIFIED (often emitted as "TRACE" by SDKs).
   // Treat minSeverity 1 (Trace+) identically to 0 so those logs are included.
@@ -16,10 +17,8 @@ export function getLogs(db: QueryableDB, opts: LogQueryOptions = {}): LogRecord[
   const conditions: string[] = ['severity_number >= ?'];
   const params: unknown[]   = [effectiveMin];
 
-  if (sinceNano) {
-    conditions.push('timestamp_unix_nano >= ?');
-    params.push(sinceNano);
-  }
+  if (sinceNano) { conditions.push('timestamp_unix_nano >= ?'); params.push(sinceNano); }
+  if (untilNano) { conditions.push('timestamp_unix_nano <= ?'); params.push(untilNano); }
 
   if (filter.trim()) {
     conditions.push('(body LIKE ? OR service_name LIKE ? OR severity_text LIKE ?)');

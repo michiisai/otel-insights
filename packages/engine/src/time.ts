@@ -36,6 +36,19 @@ export function parseSinceNano(since: string | undefined | null): string | null 
   return null;
 }
 
+/**
+ * Parse an `until` string into a nanosecond timestamp string.
+ * Relative durations ("1d", "1h") are interpreted as "that far in the past
+ * from now" — i.e. the same arithmetic as parseSinceNano. Use this as the
+ * upper-bound companion to parseSinceNano.
+ *
+ * Example: since="2d" until="1d"  →  window = yesterday only
+ */
+export function parseUntilNano(until: string | undefined | null): string | null {
+  // Reuse the same parsing logic — relative means "N ago from now"
+  return parseSinceNano(until);
+}
+
 /** Convert a millisecond epoch timestamp to a 19-digit nanosecond string. */
 function msToNanoString(ms: number): string {
   // Append 6 zeros (ms → ns). String arithmetic avoids JS float precision loss.

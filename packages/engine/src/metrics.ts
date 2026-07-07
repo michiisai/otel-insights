@@ -7,9 +7,12 @@ import type { QueryableDB, MetricsData } from '@otel-insights/types';
 //   CORRECT:  json_extract(attributes, '$."gen_ai.request.model"')
 //   WRONG:    json_extract(attributes, '$.gen_ai.request.model')  ← always returns NULL
 
-export function getMetricsData(db: QueryableDB, sinceNano?: string): MetricsData {
-  const timeFilter = sinceNano ? 'WHERE start_time_unix_nano >= ?' : '';
-  const timeParam  = sinceNano ? [sinceNano] : [];
+export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: string): MetricsData {
+  const spanParts: string[] = [];
+  const spanParams: unknown[] = [];
+  if (sinceNano) { spanParts.push('start_time_unix_nano >= ?'); spanParams.push(sinceNano); }
+  if (untilNano) { spanParts.push('start_time_unix_nano <= ?'); spanParams.push(untilNano); }
+  const spanWhere = spanParts.length ? `WHERE ${spanParts.join(' AND ')}` : '';
 
   // Slowest operations aggregated by span name
   const slowestOps = db.prepare(`
@@ -20,16 +23,15 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string): MetricsData
       COUNT(*)         AS count,
       SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count
     FROM spans
-    ${timeFilter}
+    ${spanWhere}
     GROUP BY name
     ORDER BY avg_duration_ms DESC
     LIMIT 25
-  `).all(...timeParam);
+  `).all(...spanParams);
 
   // Token usage — supports both OTel GenAI semconv and common llm.* conventions
-  const tokenFilter = sinceNano
-    ? `WHERE start_time_unix_nano >= ?
-       AND (`
+  const tokenTimeClause = spanParams.length
+    ? `${spanWhere}\n       AND (`
     : 'WHERE (';
   const tokenRows = db.prepare(`
     SELECT
@@ -50,18 +52,17 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string): MetricsData
       )) AS completion_tokens,
       COUNT(*) AS call_count
     FROM spans
-    ${tokenFilter}
+    ${tokenTimeClause}
         json_extract(attributes, '$."gen_ai.request.model"') IS NOT NULL
         OR json_extract(attributes, '$."llm.model"')         IS NOT NULL
       )
     GROUP BY model
     ORDER BY (prompt_tokens + completion_tokens) DESC
-  `).all(...timeParam);
+  `).all(...spanParams);
 
   // Tool calls — spans tagged with gen_ai.tool.name or tool.name
-  const toolFilter = sinceNano
-    ? `WHERE start_time_unix_nano >= ?
-       AND (`
+  const toolTimeClause = spanParams.length
+    ? `${spanWhere}\n       AND (`
     : 'WHERE (';
   const toolRows = db.prepare(`
     SELECT
@@ -76,7 +77,7 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string): MetricsData
       SUM(duration_ms) AS total_duration_ms,
       SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) AS error_count
     FROM spans
-    ${toolFilter}
+    ${toolTimeClause}
         json_extract(attributes, '$."gen_ai.tool.name"') IS NOT NULL
         OR json_extract(attributes, '$."tool.name"')     IS NOT NULL
         OR json_extract(attributes, '$."tool_name"')     IS NOT NULL
@@ -86,15 +87,23 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string): MetricsData
     GROUP BY tool_name
     ORDER BY count DESC
     LIMIT 25
-  `).all(...timeParam);
+  `).all(...spanParams);
 
+  // Counts for spans use start_time_unix_nano; logs/metrics use timestamp_unix_nano
+  const logParts: string[] = [];
+  const logParams: unknown[] = [];
+  if (sinceNano) { logParts.push('timestamp_unix_nano >= ?'); logParams.push(sinceNano); }
+  if (untilNano) { logParts.push('timestamp_unix_nano <= ?'); logParams.push(untilNano); }
+  const logWhere = logParts.length ? `WHERE ${logParts.join(' AND ')}` : '';
+
+  const summaryParams: unknown[] = [...spanParams, ...spanParams, ...logParams, ...logParams];
   const summary = db.prepare(`
     SELECT
-      (SELECT COUNT(*)                 FROM spans         ${sinceNano ? 'WHERE start_time_unix_nano >= ?' : ''}) AS total_spans,
-      (SELECT COUNT(DISTINCT trace_id) FROM spans         ${sinceNano ? 'WHERE start_time_unix_nano >= ?' : ''}) AS total_traces,
-      (SELECT COUNT(*)                 FROM logs          ${sinceNano ? 'WHERE timestamp_unix_nano >= ?'   : ''}) AS total_logs,
-      (SELECT COUNT(*)                 FROM metric_points ${sinceNano ? 'WHERE timestamp_unix_nano >= ?'   : ''}) AS total_metric_points
-  `).get(...(sinceNano ? [sinceNano, sinceNano, sinceNano, sinceNano] : []));
+      (SELECT COUNT(*)                 FROM spans         ${spanWhere}) AS total_spans,
+      (SELECT COUNT(DISTINCT trace_id) FROM spans         ${spanWhere}) AS total_traces,
+      (SELECT COUNT(*)                 FROM logs          ${logWhere})  AS total_logs,
+      (SELECT COUNT(*)                 FROM metric_points ${logWhere})  AS total_metric_points
+  `).get(...summaryParams);
 
   return {
     slowestOperations: slowestOps.map(r => ({

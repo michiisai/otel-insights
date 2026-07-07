@@ -9,6 +9,7 @@ import {
   getServiceNames,
   getServiceSummary,
   parseSinceNano,
+  parseUntilNano,
 } from '@otel-insights/engine';
 
 // convert nanoseconds to ISO date string, or return the original string if invalid
@@ -84,6 +85,7 @@ function aggregateTokens(spans: { attributes: Record<string, unknown> }[]): Toke
 interface FindRecentErrorsInput {
   limit?: number;
   since?: string;
+  until?: string;
 }
 
 class FindRecentErrorsTool implements vscode.LanguageModelTool<FindRecentErrorsInput> {
@@ -95,10 +97,11 @@ class FindRecentErrorsTool implements vscode.LanguageModelTool<FindRecentErrorsI
   ): Promise<vscode.LanguageModelToolResult> {
     const limit = options.input.limit ?? 5;
     const sinceNano = parseSinceNano(options.input.since);
-    const errors = getRecentErrorTraces(this.store.getDb(), limit, sinceNano ?? undefined);
+    const untilNano = parseUntilNano(options.input.until);
+    const errors = getRecentErrorTraces(this.store.getDb(), limit, sinceNano ?? undefined, untilNano ?? undefined);
 
     if (!errors.length) {
-      const qualifier = sinceNano ? ` in the requested time window` : '';
+      const qualifier = (sinceNano || untilNano) ? ` in the requested time window` : '';
       return new vscode.LanguageModelToolResult([
         new vscode.LanguageModelTextPart(`No error traces found${qualifier} in the telemetry store.`),
       ]);
@@ -142,15 +145,16 @@ const NOTABLE_ATTRS = [
   'rpc.method', 'rpc.service',
 ];
 
-class GetAgentMetricsTool implements vscode.LanguageModelTool<{ since?: string }> {
+class GetAgentMetricsTool implements vscode.LanguageModelTool<{ since?: string; until?: string }> {
   constructor(private readonly store: TelemetryStore) {}
 
   async invoke(
-    options: vscode.LanguageModelToolInvocationOptions<{ since?: string }>,
+    options: vscode.LanguageModelToolInvocationOptions<{ since?: string; until?: string }>,
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
     const sinceNano = parseSinceNano(options.input.since);
-    const { tokenUsage, toolCalls } = getMetricsData(this.store.getDb(), sinceNano ?? undefined);
+    const untilNano = parseUntilNano(options.input.until);
+    const { tokenUsage, toolCalls } = getMetricsData(this.store.getDb(), sinceNano ?? undefined, untilNano ?? undefined);
 
     const hasTokens = tokenUsage.length > 0;
     const hasTools  = toolCalls.length > 0;
@@ -209,6 +213,7 @@ class GetAgentMetricsTool implements vscode.LanguageModelTool<{ since?: string }
 interface GetSlowestSpansInput {
   limit?: number;
   since?: string;
+  until?: string;
 }
 
 class GetSlowestSpansTool implements vscode.LanguageModelTool<GetSlowestSpansInput> {
@@ -220,7 +225,8 @@ class GetSlowestSpansTool implements vscode.LanguageModelTool<GetSlowestSpansInp
   ): Promise<vscode.LanguageModelToolResult> {
     const limit = options.input.limit ?? 10;
     const sinceNano = parseSinceNano(options.input.since);
-    const { slowestOperations } = getMetricsData(this.store.getDb(), sinceNano ?? undefined);
+    const untilNano = parseUntilNano(options.input.until);
+    const { slowestOperations } = getMetricsData(this.store.getDb(), sinceNano ?? undefined, untilNano ?? undefined);
     const ops = slowestOperations.slice(0, limit);
 
     if (!ops.length) {
@@ -249,6 +255,7 @@ interface SearchLogsInput {
   minSeverity?: number;
   limit?: number;
   since?: string;
+  until?: string;
 }
 
 class SearchLogsTool implements vscode.LanguageModelTool<SearchLogsInput> {
@@ -260,7 +267,8 @@ class SearchLogsTool implements vscode.LanguageModelTool<SearchLogsInput> {
   ): Promise<vscode.LanguageModelToolResult> {
     const { query = '', minSeverity = 0, limit = 50 } = options.input;
     const sinceNano = parseSinceNano(options.input.since);
-    const logs = getLogs(this.store.getDb(), { filter: query, minSeverity, limit, sinceNano: sinceNano ?? undefined });
+    const untilNano = parseUntilNano(options.input.until);
+    const logs = getLogs(this.store.getDb(), { filter: query, minSeverity, limit, sinceNano: sinceNano ?? undefined, untilNano: untilNano ?? undefined });
 
     if (!logs.length) {
       const qualifier = query ? ` matching "${query}"` : '';
@@ -287,16 +295,17 @@ class SearchLogsTool implements vscode.LanguageModelTool<SearchLogsInput> {
 }
 
 // high-level overview of recent telemetry data, including counts, health metrics, slowest operations, token usage, and tool calls.
-class SummarizeRecentActivityTool implements vscode.LanguageModelTool<{ since?: string }> {
+class SummarizeRecentActivityTool implements vscode.LanguageModelTool<{ since?: string; until?: string }> {
   constructor(private readonly store: TelemetryStore) {}
 
   async invoke(
-    options: vscode.LanguageModelToolInvocationOptions<{ since?: string }>,
+    options: vscode.LanguageModelToolInvocationOptions<{ since?: string; until?: string }>,
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
     const db = this.store.getDb();
     const sinceNano = parseSinceNano(options.input.since);
-    const { summary, slowestOperations, tokenUsage, toolCalls } = getMetricsData(db, sinceNano ?? undefined);
+    const untilNano = parseUntilNano(options.input.until);
+    const { summary, slowestOperations, tokenUsage, toolCalls } = getMetricsData(db, sinceNano ?? undefined, untilNano ?? undefined);
 
     if (summary.totalSpans === 0 && summary.totalLogs === 0) {
       return new vscode.LanguageModelToolResult([
@@ -306,8 +315,11 @@ class SummarizeRecentActivityTool implements vscode.LanguageModelTool<{ since?: 
       ]);
     }
 
-    const timeAnd = sinceNano ? 'AND start_time_unix_nano >= ?' : '';
-    const timeParam = sinceNano ? [sinceNano] : [];
+    const timeAndParts: string[] = [];
+    const timeParam: unknown[] = [];
+    if (sinceNano) { timeAndParts.push('AND start_time_unix_nano >= ?'); timeParam.push(sinceNano); }
+    if (untilNano) { timeAndParts.push('AND start_time_unix_nano <= ?'); timeParam.push(untilNano); }
+    const timeAnd = timeAndParts.join(' ');
 
     const errorStats = db.prepare(`
       SELECT
@@ -385,6 +397,7 @@ class SummarizeRecentActivityTool implements vscode.LanguageModelTool<{ since?: 
 interface GetServiceSummaryInput {
   serviceName?: string;
   since?: string;
+  until?: string;
 }
 
 class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummaryInput> {
@@ -397,6 +410,7 @@ class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummar
     const db = this.store.getDb();
     const { serviceName } = options.input;
     const sinceNano = parseSinceNano(options.input.since);
+    const untilNano = parseUntilNano(options.input.until);
 
     // No serviceName → list available services so the caller can pick
     if (!serviceName?.trim()) {
@@ -417,7 +431,7 @@ class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummar
       ]);
     }
 
-    const summary = getServiceSummary(db, serviceName.trim(), sinceNano ?? undefined);
+    const summary = getServiceSummary(db, serviceName.trim(), sinceNano ?? undefined, untilNano ?? undefined);
     if (!summary) {
       const names = getServiceNames(db);
       const hint = names.length
@@ -484,6 +498,7 @@ class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummar
 interface ListTracesInput {
   serviceName?: string;
   since?: string;
+  until?: string;
   limit?: number;
   errorsOnly?: boolean;
 }
@@ -498,12 +513,14 @@ class ListTracesTool implements vscode.LanguageModelTool<ListTracesInput> {
     const { serviceName, errorsOnly = false } = options.input;
     const limit     = options.input.limit ?? 20;
     const sinceNano = parseSinceNano(options.input.since);
+    const untilNano = parseUntilNano(options.input.until);
 
     let traces = getTraces(
       this.store.getDb(),
       limit,
       sinceNano ?? undefined,
       serviceName?.trim() || undefined,
+      untilNano ?? undefined,
     );
 
     if (errorsOnly) { traces = traces.filter(t => t.hasError); }
@@ -511,7 +528,8 @@ class ListTracesTool implements vscode.LanguageModelTool<ListTracesInput> {
     if (!traces.length) {
       const qualifiers: string[] = [];
       if (serviceName) { qualifiers.push(`service "${serviceName}"`); }
-      if (sinceNano)   { qualifiers.push(`the requested time window`); }
+      if (sinceNano)   { qualifiers.push(`after ${options.input.since}`); }
+      if (untilNano)   { qualifiers.push(`before ${options.input.until}`); }
       if (errorsOnly)  { qualifiers.push(`errors only`); }
       const qualifier = qualifiers.length ? ` for ${qualifiers.join(', ')}` : '';
       return new vscode.LanguageModelToolResult([
@@ -523,6 +541,7 @@ class ListTracesTool implements vscode.LanguageModelTool<ListTracesInput> {
       `# Traces (${traces.length} shown, most recent first)`,
       serviceName ? `Service: ${serviceName}` : '',
       options.input.since ? `Since: ${options.input.since}` : '',
+      options.input.until ? `Until: ${options.input.until}` : '',
     ].filter(Boolean).join(' · ') + '\n';
 
     const lines: string[] = [header];
@@ -624,6 +643,155 @@ class GetTraceTool implements vscode.LanguageModelTool<GetTraceInput> {
   }
 }
 
+interface CompareTracesInput {
+  traceIdA: string;
+  traceIdB: string;
+}
+
+class CompareTracesTool implements vscode.LanguageModelTool<CompareTracesInput> {
+  constructor(private readonly store: TelemetryStore) {}
+
+  async invoke(
+    options: vscode.LanguageModelToolInvocationOptions<CompareTracesInput>,
+    _token: vscode.CancellationToken,
+  ): Promise<vscode.LanguageModelToolResult> {
+    const { traceIdA, traceIdB } = options.input;
+
+    if (!traceIdA?.trim() || !traceIdB?.trim()) {
+      return new vscode.LanguageModelToolResult([
+        new vscode.LanguageModelTextPart('Error: both traceIdA and traceIdB are required.'),
+      ]);
+    }
+
+    const db     = this.store.getDb();
+    const spansA = getSpansByTraceId(db, traceIdA.trim());
+    const spansB = getSpansByTraceId(db, traceIdB.trim());
+
+    if (!spansA.length) {
+      return new vscode.LanguageModelToolResult([
+        new vscode.LanguageModelTextPart(`No spans found for traceIdA: ${traceIdA}`),
+      ]);
+    }
+    if (!spansB.length) {
+      return new vscode.LanguageModelToolResult([
+        new vscode.LanguageModelTextPart(`No spans found for traceIdB: ${traceIdB}`),
+      ]);
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    const rootA    = spansA.find(s => !s.parentSpanId) ?? spansA[0]!;
+    const rootB    = spansB.find(s => !s.parentSpanId) ?? spansB[0]!;
+    const errorsA  = spansA.filter(s => s.statusCode === 2);
+    const errorsB  = spansB.filter(s => s.statusCode === 2);
+    const tokensA  = aggregateTokens(spansA);
+    const tokensB  = aggregateTokens(spansB);
+    const totalTokA = tokensA.reduce((s, t) => s + t.totalTokens, 0);
+    const totalTokB = tokensB.reduce((s, t) => s + t.totalTokens, 0);
+
+    // Span name sets for path comparison
+    const namesA = new Set(spansA.map(s => s.name));
+    const namesB = new Set(spansB.map(s => s.name));
+    const onlyInA = [...namesA].filter(n => !namesB.has(n));
+    const onlyInB = [...namesB].filter(n => !namesA.has(n));
+    const inBoth  = [...namesA].filter(n => namesB.has(n));
+
+    // Per-span-name avg duration for shared spans
+    const avgDurA = (name: string) => {
+      const ms = spansA.filter(s => s.name === name).map(s => s.durationMs);
+      return ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : 0;
+    };
+    const avgDurB = (name: string) => {
+      const ms = spansB.filter(s => s.name === name).map(s => s.durationMs);
+      return ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : 0;
+    };
+
+    const delta = (a: number, b: number) => {
+      const d = b - a;
+      return d === 0 ? '=' : d > 0 ? `+${d.toFixed(1)}ms` : `${d.toFixed(1)}ms`;
+    };
+
+    const pct = (a: number, b: number) => {
+      if (a === 0) { return b === 0 ? '0%' : '+∞'; }
+      return `${((b - a) / a * 100).toFixed(0)}%`;
+    };
+
+    // ── Output ─────────────────────────────────────────────────────────────────
+
+    const lines: string[] = [
+      '# Trace Comparison\n',
+      `| | **A** \`${traceIdA.slice(0, 16)}…\` | **B** \`${traceIdB.slice(0, 16)}…\` | Delta |`,
+      '|---|---|---|---|',
+      `| Service | ${rootA.serviceName} | ${rootB.serviceName} | |`,
+      `| Root span | ${rootA.name} | ${rootB.name} | |`,
+      `| Duration | ${rootA.durationMs}ms | ${rootB.durationMs}ms | ${delta(rootA.durationMs, rootB.durationMs)} (${pct(rootA.durationMs, rootB.durationMs)}) |`,
+      `| Spans | ${spansA.length} | ${spansB.length} | ${delta(spansA.length, spansB.length)} |`,
+      `| Errors | ${errorsA.length} | ${errorsB.length} | ${errorsA.length === 0 && errorsB.length === 0 ? '✅ both clean' : errorsA.length > errorsB.length ? '⬇️ B has fewer' : errorsB.length > errorsA.length ? '⬆️ B has more' : '='} |`,
+      `| Total tokens | ${totalTokA.toLocaleString()} | ${totalTokB.toLocaleString()} | ${delta(totalTokA, totalTokB)} (${pct(totalTokA, totalTokB)}) |`,
+      '',
+    ];
+
+    // Token breakdown if both have data
+    if (tokensA.length || tokensB.length) {
+      lines.push('## Token Usage by Model\n');
+      const models = [...new Set([...tokensA.map(t => t.model), ...tokensB.map(t => t.model)])];
+      lines.push('| Model | A tokens | B tokens | Delta |');
+      lines.push('|---|---|---|---|');
+      for (const m of models) {
+        const a = tokensA.find(t => t.model === m);
+        const b = tokensB.find(t => t.model === m);
+        const tA = a?.totalTokens ?? 0;
+        const tB = b?.totalTokens ?? 0;
+        lines.push(`| ${m} | ${tA.toLocaleString()} (${a?.callCount ?? 0} calls) | ${tB.toLocaleString()} (${b?.callCount ?? 0} calls) | ${delta(tA, tB)} |`);
+      }
+      lines.push('');
+    }
+
+    // Execution path diff
+    if (onlyInA.length || onlyInB.length) {
+      lines.push('## Execution Path Differences\n');
+      if (onlyInA.length) {
+        lines.push(`**Only in A:** ${onlyInA.join(', ')}`);
+      }
+      if (onlyInB.length) {
+        lines.push(`**Only in B:** ${onlyInB.join(', ')}`);
+      }
+      lines.push('');
+    }
+
+    // Shared spans with significant duration differences
+    const slowdowns = inBoth
+      .map(name => ({ name, dA: avgDurA(name), dB: avgDurB(name) }))
+      .filter(r => Math.abs(r.dB - r.dA) > 50 || (r.dA > 0 && Math.abs((r.dB - r.dA) / r.dA) > 0.25))
+      .sort((a, b) => Math.abs(b.dB - b.dA) - Math.abs(a.dB - a.dA));
+
+    if (slowdowns.length) {
+      lines.push('## Significant Duration Differences (shared spans)\n');
+      lines.push('| Span | A avg | B avg | Delta |');
+      lines.push('|---|---|---|---|');
+      for (const r of slowdowns) {
+        lines.push(`| ${r.name} | ${r.dA.toFixed(1)}ms | ${r.dB.toFixed(1)}ms | ${delta(r.dA, r.dB)} (${pct(r.dA, r.dB)}) |`);
+      }
+      lines.push('');
+    }
+
+    // Errors
+    if (errorsA.length || errorsB.length) {
+      lines.push('## Errors\n');
+      if (errorsA.length) {
+        lines.push(`**A errors:** ${errorsA.map(s => s.name).join(', ')}`);
+      }
+      if (errorsB.length) {
+        lines.push(`**B errors:** ${errorsB.map(s => s.name).join(', ')}`);
+      }
+    }
+
+    return new vscode.LanguageModelToolResult([
+      new vscode.LanguageModelTextPart(lines.join('\n')),
+    ]);
+  }
+}
+
 export function registerTools(
   context: vscode.ExtensionContext,
   store: TelemetryStore,
@@ -637,5 +805,6 @@ export function registerTools(
     vscode.lm.registerTool('otel-insights_getServiceSummary',    new GetServiceSummaryTool(store)),
     vscode.lm.registerTool('otel-insights_listTraces',           new ListTracesTool(store)),
     vscode.lm.registerTool('otel-insights_getTrace',             new GetTraceTool(store)),
+    vscode.lm.registerTool('otel-insights_compareTraces',        new CompareTracesTool(store)),
   );
 }

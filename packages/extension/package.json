@@ -31,7 +31,7 @@
         "tags": ["otel", "traces", "observability"],
         "toolReferenceName": "otelTraces",
         "displayName": "List Traces",
-        "modelDescription": "Returns a list of recent traces — most recent first — with traceId, root span name, service name, timestamp, duration, span count, and whether the trace has errors. Supports filtering by serviceName, time window (since), and errorsOnly flag. Use this to browse what ran, find a specific traceId, or get an overview of recent activity. Follow up with getTrace to drill into any trace's full span tree.",
+        "modelDescription": "Returns a list of recent traces — most recent first — with traceId, root span name, service name, timestamp, duration, span count, and whether the trace has errors. Supports filtering by serviceName, time window (since/until), and errorsOnly flag. Use this to browse what ran, find a specific traceId, or get an overview of recent activity. To find traces from a specific period (e.g. 'yesterday'), use both since and until together (e.g. since='2d' until='1d'). Follow up with getTrace to drill into any trace's full span tree.",
         "userDescription": "Browse recent traces with optional service and time filters.",
         "canBeReferencedInPrompt": true,
         "icon": "$(list-tree)",
@@ -45,6 +45,10 @@
             "since": {
               "type": "string",
               "description": "Only include traces after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string."
+            },
+            "until": {
+              "type": "string",
+              "description": "Only include traces before this point. Relative: '1d' means 'more than 1 day ago'. Use with since to isolate a window, e.g. since='2d' until='1d' = yesterday only."
             },
             "limit": {
               "type": "number",
@@ -78,6 +82,30 @@
         }
       },
       {
+        "name": "otel-insights_compareTraces",
+        "tags": ["otel", "traces", "comparison", "debugging", "performance"],
+        "toolReferenceName": "otelCompare",
+        "displayName": "Compare Two Traces",
+        "modelDescription": "Compares two traces side by side. Returns a diff table covering: duration delta, span count, error count, total token usage, token breakdown by model, execution path differences (spans only in A or only in B), and shared spans with significant duration changes (>50ms or >25% slower/faster). ALWAYS use this when the user asks why one run was faster/slower than another, wants to compare a passing run to a failing one, or wants to A/B test a prompt or agent change. Get traceIds from listTraces.",
+        "userDescription": "Diff two traces to find what changed between runs.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(diff)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "traceIdA": {
+              "type": "string",
+              "description": "The baseline trace ID (e.g. the faster or passing run)."
+            },
+            "traceIdB": {
+              "type": "string",
+              "description": "The trace ID to compare against A (e.g. the slower or failing run)."
+            }
+          },
+          "required": ["traceIdA", "traceIdB"]
+        }
+      },
+      {
         "name": "otel-insights_getServiceSummary",
         "tags": ["otel", "observability", "agents", "performance", "comparison"],
         "toolReferenceName": "otelService",
@@ -96,6 +124,10 @@
             "since": {
               "type": "string",
               "description": "Only include telemetry after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
+            },
+            "until": {
+              "type": "string",
+              "description": "Only include telemetry before this point. Use with since to isolate a time window, e.g. since='2d' until='1d' = yesterday only."
             }
           }
         }
@@ -115,6 +147,10 @@
             "since": {
               "type": "string",
               "description": "Only include telemetry after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
+            },
+            "until": {
+              "type": "string",
+              "description": "Only include telemetry before this point. Relative: '1d' means 'more than 1 day ago'. Use with since to isolate a window, e.g. since='2d' until='1d' = yesterday only."
             }
           }
         }
@@ -138,6 +174,10 @@
             "since": {
               "type": "string",
               "description": "Only include errors after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
+            },
+            "until": {
+              "type": "string",
+              "description": "Only include errors before this point. Use with since to isolate a time window."
             }
           }
         }
@@ -161,6 +201,10 @@
             "since": {
               "type": "string",
               "description": "Only include spans after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
+            },
+            "until": {
+              "type": "string",
+              "description": "Only include spans before this point. Use with since to isolate a time window."
             }
           }
         }
@@ -192,6 +236,10 @@
             "since": {
               "type": "string",
               "description": "Only include logs after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
+            },
+            "until": {
+              "type": "string",
+              "description": "Only include logs before this point. Use with since to isolate a time window."
             }
           },
           "required": ["query"]
@@ -212,6 +260,10 @@
             "since": {
               "type": "string",
               "description": "Only include spans after this point. Relative: '5m', '1h', '24h', '7d'. Absolute: ISO 8601 string e.g. '2024-01-15T10:00:00Z'."
+            },
+            "until": {
+              "type": "string",
+              "description": "Only include spans before this point. Use with since to isolate a time window, e.g. since='2d' until='1d' = yesterday only."
             }
           }
         }
@@ -219,7 +271,7 @@
     ],
     "chatSkills": [
       {
-        "path": "./skills/otel-insights/SKILL.md"
+        "path": "./skills/SKILL.md"
       }
     ],
     "configuration": {

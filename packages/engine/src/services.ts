@@ -46,15 +46,19 @@ export function getServiceNames(db: QueryableDB): string[] {
   return rows.map(r => String(r['service_name'] ?? ''));
 }
 
-export function getServiceSummary(db: QueryableDB, serviceName: string, sinceNano?: string): ServiceSummary | null {
+export function getServiceSummary(db: QueryableDB, serviceName: string, sinceNano?: string, untilNano?: string): ServiceSummary | null {
   // Verify the service exists
   const exists = db.prepare(`
     SELECT 1 FROM spans WHERE service_name = ? LIMIT 1
   `).get(serviceName);
   if (!exists) { return null; }
 
-  const timeAnd   = sinceNano ? 'AND start_time_unix_nano >= ?' : '';
-  const baseParams = sinceNano ? [serviceName, sinceNano] : [serviceName];
+  const timeParts: string[] = [];
+  const timeParams: unknown[] = [];
+  if (sinceNano) { timeParts.push('AND start_time_unix_nano >= ?'); timeParams.push(sinceNano); }
+  if (untilNano) { timeParts.push('AND start_time_unix_nano <= ?'); timeParams.push(untilNano); }
+  const timeAnd    = timeParts.join(' ');
+  const baseParams = [serviceName, ...timeParams];
 
   const countRow = db.prepare(`
     SELECT

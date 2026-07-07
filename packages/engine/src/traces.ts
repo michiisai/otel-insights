@@ -5,6 +5,7 @@ export function getTraces(
   limit = 200,
   sinceNano?: string,
   serviceName?: string,
+  untilNano?: string,
 ): Trace[] {
   const conditions: string[] = [];
   const params: unknown[]    = [];
@@ -14,9 +15,13 @@ export function getTraces(
     params.push(serviceName);
   }
 
-  const whereClause  = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const havingClause = sinceNano ? 'HAVING MIN(start_time_unix_nano) >= ?' : '';
-  if (sinceNano) { params.push(sinceNano); }
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const havingParts: string[] = [];
+  if (sinceNano) { havingParts.push('MIN(start_time_unix_nano) >= ?'); params.push(sinceNano); }
+  if (untilNano) { havingParts.push('MIN(start_time_unix_nano) <= ?'); params.push(untilNano); }
+  const havingClause = havingParts.length ? `HAVING ${havingParts.join(' AND ')}` : '';
+
   params.push(limit);
 
   const rows = db.prepare(`
