@@ -558,12 +558,25 @@ class ListTracesTool implements vscode.LanguageModelTool<ListTracesInput> {
       const status  = t.hasError ? '❌' : '✅';
       const time    = nanoToDate(t.startTimeUnixNano);
       lines.push(`${status} **${t.rootSpanName}** [${t.serviceName}]`);
-      lines.push(`   traceId: ${t.traceId}`);
+      lines.push(`   traceId: \`${t.traceId}\``);
       lines.push(`   time: ${time} | duration: ${t.durationMs}ms | spans: ${t.spanCount}`);
       lines.push('');
     }
 
-    lines.push('To inspect the full span tree for a trace, call getTrace with its traceId.');
+    if (attributeValue) {
+      const matchDesc = attributeKey
+        ? `"${attributeKey}" = "${attributeValue}"`
+        : `"${attributeValue}" (substring match across all span attributes)`;
+      lines.push(`> Traces above were matched because at least one span contains ${matchDesc}.`);
+      lines.push(`> The match may appear in any span — not necessarily the root. Call getTrace on a traceId to see exactly which span(s) matched.`);
+      lines.push('');
+    }
+
+    lines.push(
+      `Present each trace individually with its traceId. ` +
+      `Do not group or summarize — list them so the user can identify specific runs. ` +
+      `Call getTrace on any traceId to drill into its full span tree.`
+    );
 
     return new vscode.LanguageModelToolResult([
       new vscode.LanguageModelTextPart(lines.join('\n')),
