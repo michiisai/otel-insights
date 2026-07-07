@@ -41,7 +41,7 @@ ALWAYS call `otel-insights_getTrace` when the user wants to inspect a specific t
 | Tool | Purpose | Key inputs |
 |------|---------|------------|
 | `otel-insights_summarizeRecentActivity` | High-level health overview — counts, error rate, p95 latency, token usage, tool calls | `since`, `until` |
-| `otel-insights_listTraces` | Browse recent traces — traceId, root span name, service, time, duration, error flag | `serviceName`, `since`, `until`, `limit` (default 20), `errorsOnly` |
+| `otel-insights_listTraces` | Browse recent traces — traceId, root span name, service, time, duration, error flag | `serviceName`, `since`, `until`, `limit` (default 20), `errorsOnly`, `attributeKey`, `attributeValue` |
 | `otel-insights_getTrace` | Full span tree for any traceId — status, kind, duration, token usage, attributes for every span | `traceId` (required) |
 | `otel-insights_compareTraces` | Side-by-side diff of two traces — duration delta, token delta, execution path differences, per-span slowdowns | `traceIdA`, `traceIdB` (both required) |
 | `otel-insights_getServiceSummary` | Full performance profile for one service/agent — error rate, p50/p95 latency, slowest ops, tokens, tool calls, all scoped to that service | `serviceName`, `since`, `until` |

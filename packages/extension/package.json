@@ -31,7 +31,7 @@
         "tags": ["otel", "traces", "observability"],
         "toolReferenceName": "otelTraces",
         "displayName": "List Traces",
-        "modelDescription": "Returns a list of recent traces — most recent first — with traceId, root span name, service name, timestamp, duration, span count, and whether the trace has errors. Supports filtering by serviceName, time window (since/until), and errorsOnly flag. Use this to browse what ran, find a specific traceId, or get an overview of recent activity. To find traces from a specific period (e.g. 'yesterday'), use both since and until together (e.g. since='2d' until='1d'). Follow up with getTrace to drill into any trace's full span tree.",
+        "modelDescription": "Returns a list of recent traces — most recent first — with traceId, root span name, service name, timestamp, duration, span count, and whether the trace has errors. Supports filtering by serviceName, time window (since/until), errorsOnly flag, and span attribute values. To filter by a specific attribute, provide attributeKey (e.g. 'gen_ai.request.model') and attributeValue (e.g. 'gpt-4o'). To do a loose search across all attributes, provide only attributeValue. To find traces from a specific period (e.g. 'yesterday'), use both since and until together (e.g. since='2d' until='1d'). Follow up with getTrace to drill into any trace's full span tree.",
         "userDescription": "Browse recent traces with optional service and time filters.",
         "canBeReferencedInPrompt": true,
         "icon": "$(list-tree)",
@@ -57,6 +57,14 @@
             "errorsOnly": {
               "type": "boolean",
               "description": "When true, only return traces that contain at least one errored span."
+            },
+            "attributeKey": {
+              "type": "string",
+              "description": "Attribute name to filter on (e.g. 'gen_ai.request.model', 'http.method'). Use with attributeValue for an exact match."
+            },
+            "attributeValue": {
+              "type": "string",
+              "description": "Attribute value to filter on. If attributeKey is also provided, matches exactly on that key. If used alone, does a substring search across all span attributes."
             }
           }
         }

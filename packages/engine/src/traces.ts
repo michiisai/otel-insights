@@ -1,18 +1,42 @@
 import type { QueryableDB, Trace, Span } from '@otel-insights/types';
 
-export function getTraces(
-  db: QueryableDB,
-  limit = 200,
-  sinceNano?: string,
-  serviceName?: string,
-  untilNano?: string,
-): Trace[] {
+export interface GetTracesOptions {
+  limit?: number;
+  sinceNano?: string;
+  untilNano?: string;
+  serviceName?: string;
+  attributeKey?: string;
+  attributeValue?: string;
+}
+
+export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[] {
+  const {
+    limit = 200,
+    sinceNano,
+    untilNano,
+    serviceName,
+    attributeKey,
+    attributeValue,
+  } = opts;
+
   const conditions: string[] = [];
   const params: unknown[]    = [];
 
   if (serviceName) {
     conditions.push('service_name = ?');
     params.push(serviceName);
+  }
+
+  // Attribute filter: restrict to traces containing at least one matching span.
+  // If a key is provided, use json_extract for an exact match on that attribute. (key requires value)
+  // If ONLY a value is provided, do a substring search across the full JSON blob.
+  if (attributeKey && attributeValue !== undefined) {
+    const path = `'$."${attributeKey.replace(/"/g, '')}"'`;
+    conditions.push(`trace_id IN (SELECT DISTINCT trace_id FROM spans WHERE json_extract(attributes, ${path}) = ?)`);
+    params.push(attributeValue);
+  } else if (attributeValue) {
+    conditions.push(`trace_id IN (SELECT DISTINCT trace_id FROM spans WHERE attributes LIKE ?)`);
+    params.push(`%${attributeValue}%`);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

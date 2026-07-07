@@ -10,6 +10,7 @@ import {
   getServiceSummary,
   parseSinceNano,
   parseUntilNano,
+  type GetTracesOptions,
 } from '@otel-insights/engine';
 
 // convert nanoseconds to ISO date string, or return the original string if invalid
@@ -501,6 +502,8 @@ interface ListTracesInput {
   until?: string;
   limit?: number;
   errorsOnly?: boolean;
+  attributeKey?: string;
+  attributeValue?: string;
 }
 
 class ListTracesTool implements vscode.LanguageModelTool<ListTracesInput> {
@@ -510,27 +513,31 @@ class ListTracesTool implements vscode.LanguageModelTool<ListTracesInput> {
     options: vscode.LanguageModelToolInvocationOptions<ListTracesInput>,
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
-    const { serviceName, errorsOnly = false } = options.input;
+    const { serviceName, errorsOnly = false, attributeKey, attributeValue } = options.input;
     const limit     = options.input.limit ?? 20;
     const sinceNano = parseSinceNano(options.input.since);
     const untilNano = parseUntilNano(options.input.until);
 
-    let traces = getTraces(
-      this.store.getDb(),
+    const tracesOpts: GetTracesOptions = {
       limit,
-      sinceNano ?? undefined,
-      serviceName?.trim() || undefined,
-      untilNano ?? undefined,
-    );
+      sinceNano:      sinceNano ?? undefined,
+      untilNano:      untilNano ?? undefined,
+      serviceName:    serviceName?.trim() || undefined,
+      attributeKey:   attributeKey?.trim() || undefined,
+      attributeValue: attributeValue?.trim() || undefined,
+    };
+    let traces = getTraces(this.store.getDb(), tracesOpts);
 
     if (errorsOnly) { traces = traces.filter(t => t.hasError); }
 
     if (!traces.length) {
       const qualifiers: string[] = [];
-      if (serviceName) { qualifiers.push(`service "${serviceName}"`); }
-      if (sinceNano)   { qualifiers.push(`after ${options.input.since}`); }
-      if (untilNano)   { qualifiers.push(`before ${options.input.until}`); }
-      if (errorsOnly)  { qualifiers.push(`errors only`); }
+      if (serviceName)    { qualifiers.push(`service "${serviceName}"`); }
+      if (sinceNano)      { qualifiers.push(`after ${options.input.since}`); }
+      if (untilNano)      { qualifiers.push(`before ${options.input.until}`); }
+      if (attributeKey)   { qualifiers.push(`${attributeKey}=${attributeValue ?? '*'}`); }
+      else if (attributeValue) { qualifiers.push(`attribute contains "${attributeValue}"`); }
+      if (errorsOnly)     { qualifiers.push(`errors only`); }
       const qualifier = qualifiers.length ? ` for ${qualifiers.join(', ')}` : '';
       return new vscode.LanguageModelToolResult([
         new vscode.LanguageModelTextPart(`No traces found${qualifier}.`),
@@ -542,6 +549,7 @@ class ListTracesTool implements vscode.LanguageModelTool<ListTracesInput> {
       serviceName ? `Service: ${serviceName}` : '',
       options.input.since ? `Since: ${options.input.since}` : '',
       options.input.until ? `Until: ${options.input.until}` : '',
+      attributeKey ? `Attribute: ${attributeKey}=${attributeValue ?? '*'}` : (attributeValue ? `Attribute contains: ${attributeValue}` : ''),
     ].filter(Boolean).join(' · ') + '\n';
 
     const lines: string[] = [header];
