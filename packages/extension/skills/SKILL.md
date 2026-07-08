@@ -87,9 +87,14 @@ When omitted, tools return data across all stored telemetry.
 
 ### "Why is Codex faster than Copilot on this task?" (or any agent comparison)
 1. Call `otel-insights_getServiceSummary` with no `serviceName` to list available services.
-2. Call `otel-insights_getServiceSummary` for each agent (e.g. `"codex"` and `"copilot"`) — these can be parallel calls.
-3. Compare p50/p95 latency, token counts (input/output ratio), and tool call counts/durations across both results.
+2. Call `otel-insights_getServiceSummary` for each agent (e.g. `"codex"` and `"copilot"`) — these can be parallel calls. Optionally pass `since`/`until` to scope both calls to the same time window (e.g. `since: "1d"` for today only, or `since: "2d"` `until: "1d"` for yesterday only).
+3. Each result includes a **Summary table** with consistent field names — compare rows directly: p50/p95 duration, error rates, total/input/output tokens, llm calls, tool calls.
 4. Explain the difference: e.g. fewer tool calls, lower token usage, faster individual operations.
+
+### "How did my token usage change between last week and this week?" (or any time-window comparison)
+1. Call `otel-insights_getAgentMetrics` twice in parallel — for example, once with `since: "14d"` `until: "7d"` (last week) and once with `since: "7d"` (this week).
+2. Each result includes a **Summary table** — compare total/input/output tokens and tool call counts row by row.
+3. Explain what changed: model usage shift, more/fewer calls, higher error rate, etc.
 
 ### "Why did run A take longer than run B?" / "Compare a passing and failing run" / "Why did this run take twice as long as yesterday's?"
 1. Identify the **two time windows** you want to compare. Use `since` and `until` together on `listTraces` to isolate each window:
@@ -101,7 +106,7 @@ When omitted, tools return data across all stored telemetry.
 2. Call `otel-insights_listTraces` once per window with the appropriate `since`/`until` to find the relevant traceId in each period. Optionally filter by `serviceName` to narrow results.
 3. Pick the most comparable traceId from each window (same operation/service, or closest in root span name).
 4. Call `otel-insights_getTrace` on **both traceIds in parallel** — fetch them simultaneously.
-5. Compare the two results: look at total duration, token usage per model, span count, error status, and which spans took the most time. Explain what differs between the two runs.
+5. Each result includes a **Summary table** — compare duration, span count, error count, and token totals row by row. Use the Span Detail section to explain *why* the numbers differ (e.g. a slow tool call, an extra LLM call, an error).
 
 ### "Show me recent traces" / "What happened during this run?"
 1. Call `otel-insights_listTraces` — optionally pass `serviceName` or `since` to narrow down.

@@ -170,37 +170,57 @@ class GetAgentMetricsTool implements vscode.LanguageModelTool<{ since?: string; 
       ]);
     }
 
+    const totalTokens   = tokenUsage.reduce((s, r) => s + r.totalTokens, 0);
+    const totalInput    = tokenUsage.reduce((s, r) => s + r.promptTokens, 0);
+    const totalOutput   = tokenUsage.reduce((s, r) => s + r.completionTokens, 0);
+    const totalLLMCalls = tokenUsage.reduce((s, r) => s + r.callCount, 0);
+    const totalToolCalls  = toolCalls.reduce((s, r) => s + r.count, 0);
+    const totalToolErrors = toolCalls.reduce((s, r) => s + r.errorCount, 0);
+    const toolErrorRate = totalToolCalls > 0
+      ? ((totalToolErrors / totalToolCalls) * 100).toFixed(1)
+      : '0.0';
+    const models = tokenUsage.map(r => r.model).join(', ');
+
     const lines: string[] = ['# Agent Metrics\n'];
 
+    lines.push('## Summary');
+    lines.push('| Field | Value |');
+    lines.push('|---|---|');
     if (hasTokens) {
-      const grandTotal = tokenUsage.reduce((s, r) => s + r.totalTokens, 0);
-      lines.push(`## Token Usage — ${grandTotal.toLocaleString()} tokens total\n`);
+      lines.push(`| total tokens | ${totalTokens.toLocaleString()} |`);
+      lines.push(`| input tokens | ${totalInput.toLocaleString()} |`);
+      lines.push(`| output tokens | ${totalOutput.toLocaleString()} |`);
+      lines.push(`| llm calls | ${totalLLMCalls} |`);
+      lines.push(`| models | ${models} |`);
+    }
+    if (hasTools) {
+      lines.push(`| tool calls | ${totalToolCalls} |`);
+      lines.push(`| tool errors | ${totalToolErrors} (${toolErrorRate}%) |`);
+    }
+    lines.push('');
+
+    if (hasTokens) {
+      lines.push('## Token Usage by Model');
+      lines.push('| Model | Total | Input | Output | Calls |');
+      lines.push('|---|---|---|---|---|');
       for (const r of tokenUsage) {
-        const ratio = r.promptTokens > 0
-          ? (r.completionTokens / r.promptTokens).toFixed(2)
-          : 'N/A';
-        lines.push(`### ${r.model}`);
-        lines.push(`- Calls: ${r.callCount}`);
-        lines.push(`- Total: ${r.totalTokens.toLocaleString()} (${r.promptTokens.toLocaleString()} in / ${r.completionTokens.toLocaleString()} out, ratio ${ratio})`);
-        lines.push('');
+        lines.push(`| ${r.model} | ${r.totalTokens.toLocaleString()} | ${r.promptTokens.toLocaleString()} | ${r.completionTokens.toLocaleString()} | ${r.callCount} |`);
       }
+      lines.push('');
     } else {
       lines.push('_No token usage data. Ensure LLM spans carry gen_ai.usage.input_tokens / output_tokens._\n');
     }
 
     if (hasTools) {
-      const totalCalls  = toolCalls.reduce((s, r) => s + r.count, 0);
-      const totalErrors = toolCalls.reduce((s, r) => s + r.errorCount, 0);
-      const overallErrorPct = ((totalErrors / totalCalls) * 100).toFixed(1);
-      lines.push(`## Tool Calls — ${totalCalls} total | ${totalErrors} errors (${overallErrorPct}%)\n`);
+      lines.push('## Tool Calls');
+      lines.push('| Tool | Calls | Errors | Error % | Avg Duration | Total Duration |');
+      lines.push('|---|---|---|---|---|---|');
       for (const r of toolCalls) {
         const errorPct = r.count > 0 ? ((r.errorCount / r.count) * 100).toFixed(1) : '0.0';
-        const flag = r.errorCount > 0 ? '⚠️' : '✅';
-        lines.push(`${flag} **${r.toolName}**`);
-        lines.push(`- Calls: ${r.count} | Errors: ${r.errorCount} (${errorPct}%)`);
-        lines.push(`- Avg duration: ${r.avgDurationMs}ms | Total time: ${r.totalDurationMs}ms`);
-        lines.push('');
+        const flag = r.errorCount > 0 ? '⚠️ ' : '';
+        lines.push(`| ${flag}${r.toolName} | ${r.count} | ${r.errorCount} | ${errorPct}% | ${r.avgDurationMs}ms | ${r.totalDurationMs}ms |`);
       }
+      lines.push('');
     } else {
       lines.push('_No tool call data. Ensure agent spans carry gen_ai.tool.name or tool.name._\n');
     }
@@ -449,45 +469,73 @@ class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummar
     const errorSpanRate = summary.totalSpans > 0
       ? ((summary.errorSpans / summary.totalSpans) * 100).toFixed(1)
       : '0.0';
+    const totalTokens  = summary.tokenUsage.reduce((s, r) => s + r.totalTokens, 0);
+    const totalInput   = summary.tokenUsage.reduce((s, r) => s + r.promptTokens, 0);
+    const totalOutput  = summary.tokenUsage.reduce((s, r) => s + r.completionTokens, 0);
+    const totalLLMCalls = summary.tokenUsage.reduce((s, r) => s + r.callCount, 0);
+    const totalToolCalls  = summary.toolCalls.reduce((s, r) => s + r.count, 0);
+    const totalToolErrors = summary.toolCalls.reduce((s, r) => s + r.errorCount, 0);
+    const toolErrorRate = totalToolCalls > 0
+      ? ((totalToolErrors / totalToolCalls) * 100).toFixed(1)
+      : '0.0';
+    const models = summary.tokenUsage.map(r => r.model).join(', ');
 
     const lines: string[] = [`# Service Summary: ${summary.serviceName}\n`];
 
-    lines.push('## Overview');
-    lines.push(`- Traces: ${summary.totalTraces} (${summary.errorTraces} errored, ${errorTraceRate}% error rate)`);
-    lines.push(`- Spans:  ${summary.totalSpans} (${summary.errorSpans} errored, ${errorSpanRate}% error rate)`);
-    lines.push(`- p50 trace duration: ${summary.p50Ms}ms`);
-    lines.push(`- p95 trace duration: ${summary.p95Ms}ms`);
+    lines.push('## Summary');
+    lines.push('| Field | Value |');
+    lines.push('|---|---|');
+    lines.push(`| service | ${summary.serviceName} |`);
+    lines.push(`| traces | ${summary.totalTraces} |`);
+    lines.push(`| error traces | ${summary.errorTraces} (${errorTraceRate}%) |`);
+    lines.push(`| spans | ${summary.totalSpans} |`);
+    lines.push(`| error spans | ${summary.errorSpans} (${errorSpanRate}%) |`);
+    lines.push(`| p50 duration | ${summary.p50Ms}ms |`);
+    lines.push(`| p95 duration | ${summary.p95Ms}ms |`);
+    if (summary.tokenUsage.length) {
+      lines.push(`| total tokens | ${totalTokens.toLocaleString()} |`);
+      lines.push(`| input tokens | ${totalInput.toLocaleString()} |`);
+      lines.push(`| output tokens | ${totalOutput.toLocaleString()} |`);
+      lines.push(`| llm calls | ${totalLLMCalls} |`);
+      lines.push(`| models | ${models} |`);
+    }
+    if (summary.toolCalls.length) {
+      lines.push(`| tool calls | ${totalToolCalls} |`);
+      lines.push(`| tool errors | ${totalToolErrors} (${toolErrorRate}%) |`);
+    }
+    lines.push('');
 
     if (summary.slowestOperations.length) {
-      lines.push('\n## Slowest Operations');
+      lines.push('## Slowest Operations');
+      lines.push('| # | Operation | Avg | Max | Calls | Errors |');
+      lines.push('|---|---|---|---|---|---|');
       summary.slowestOperations.forEach((op, i) => {
         const flag = op.errorCount > 0 ? ' ⚠️' : '';
-        lines.push(`${i + 1}. **${op.name}**${flag}`);
-        lines.push(`   avg: ${op.avgDurationMs}ms | max: ${op.maxDurationMs}ms | calls: ${op.count} | errors: ${op.errorCount}`);
+        lines.push(`| ${i + 1} | ${op.name}${flag} | ${op.avgDurationMs}ms | ${op.maxDurationMs}ms | ${op.count} | ${op.errorCount} |`);
       });
+      lines.push('');
     }
 
     if (summary.tokenUsage.length) {
-      const grandTotal = summary.tokenUsage.reduce((s, r) => s + r.totalTokens, 0);
-      lines.push(`\n## LLM Token Usage (total: ${grandTotal.toLocaleString()})`);
+      lines.push('## Token Usage by Model');
+      lines.push('| Model | Total | Input | Output | Calls |');
+      lines.push('|---|---|---|---|---|');
       for (const r of summary.tokenUsage) {
-        const ratio = r.promptTokens > 0
-          ? (r.completionTokens / r.promptTokens).toFixed(2)
-          : 'N/A';
-        lines.push(`### ${r.model}`);
-        lines.push(`- Calls: ${r.callCount} | Total: ${r.totalTokens.toLocaleString()} (${r.promptTokens.toLocaleString()} in / ${r.completionTokens.toLocaleString()} out, ratio ${ratio})`);
+        lines.push(`| ${r.model} | ${r.totalTokens.toLocaleString()} | ${r.promptTokens.toLocaleString()} | ${r.completionTokens.toLocaleString()} | ${r.callCount} |`);
       }
+      lines.push('');
     }
 
     if (summary.toolCalls.length) {
-      const totalCalls  = summary.toolCalls.reduce((s, r) => s + r.count, 0);
-      const totalErrors = summary.toolCalls.reduce((s, r) => s + r.errorCount, 0);
-      lines.push(`\n## Tool Calls (${totalCalls} total, ${totalErrors} errors)`);
+      lines.push('## Tool Calls');
+      lines.push('| Tool | Calls | Errors | Error % | Avg Duration |');
+      lines.push('|---|---|---|---|---|');
       for (const r of summary.toolCalls) {
         const errorPct = r.count > 0 ? ((r.errorCount / r.count) * 100).toFixed(1) : '0.0';
-        const flag = r.errorCount > 0 ? '⚠️' : '✅';
-        lines.push(`${flag} **${r.toolName}** — ${r.count} calls | ${errorPct}% errors | avg ${r.avgDurationMs}ms`);
+        const flag = r.errorCount > 0 ? '⚠️ ' : '';
+        lines.push(`| ${flag}${r.toolName} | ${r.count} | ${r.errorCount} | ${errorPct}% | ${r.avgDurationMs}ms |`);
       }
+      lines.push('');
     }
 
     return new vscode.LanguageModelToolResult([
