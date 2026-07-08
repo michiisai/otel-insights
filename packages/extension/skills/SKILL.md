@@ -25,7 +25,7 @@ ALWAYS call `otel-insights_searchLogs` when the user asks about logs or wants to
 
 ALWAYS call `otel-insights_getAgentMetrics` when the user asks about token consumption, LLM cost, model usage, tool call behavior, which tools are failing, or tool performance.
 
-ALWAYS call `otel-insights_compareTraces` when the user asks why one run was faster/slower than another, wants to compare a passing run to a failing one, or wants to A/B test a prompt or agent change.
+ALWAYS call `otel-insights_getTrace` in parallel on multiple traceIds when the user asks why one run was faster/slower than another, wants to compare a passing run to a failing one, or wants to A/B test a prompt or agent change. Fetch both traces simultaneously, then reason over the results to explain the differences in duration, token usage, errors, and span structure.
 
 ALWAYS call `otel-insights_listTraces` when the user wants to browse, list, or find traces — e.g. "show me recent traces", "what ran in the last hour", "list traces for service X", "find a trace".
 
@@ -43,7 +43,6 @@ ALWAYS call `otel-insights_getTrace` when the user wants to inspect a specific t
 | `otel-insights_summarizeRecentActivity` | High-level health overview — counts, error rate, p95 latency, token usage, tool calls | `since`, `until` |
 | `otel-insights_listTraces` | Browse recent traces — traceId, root span name, service, time, duration, error flag | `serviceName`, `since`, `until`, `limit` (default 20), `errorsOnly`, `attributeKey`, `attributeValue` |
 | `otel-insights_getTrace` | Full span tree for any traceId — status, kind, duration, token usage, attributes for every span | `traceId` (required) |
-| `otel-insights_compareTraces` | Side-by-side diff of two traces — duration delta, token delta, execution path differences, per-span slowdowns | `traceIdA`, `traceIdB` (both required) |
 | `otel-insights_getServiceSummary` | Full performance profile for one service/agent — error rate, p50/p95 latency, slowest ops, tokens, tool calls, all scoped to that service | `serviceName`, `since`, `until` |
 | `otel-insights_findRecentErrors` | List the most recent error traces with root cause span details | `limit` (default 5), `since`, `until` |
 | `otel-insights_getSlowestSpans` | Slowest operations ranked by average duration (across all services) | `limit` (default 10), `since`, `until` |
@@ -52,7 +51,7 @@ ALWAYS call `otel-insights_getTrace` when the user wants to inspect a specific t
 
 ## Time Filtering (`since` and `until` parameters)
 
-Every tool except `getTrace` accepts an optional `since` parameter to scope results to a time window. `listTraces` also accepts `until` to set an upper-bound, allowing you to isolate a specific time period (e.g. "yesterday").
+Every tool except `getTrace` accepts optional `since` and `until` parameters to scope results to a time window. Use them together to isolate any arbitrary period (e.g. "yesterday").
 
 | Format | Example | Meaning |
 |--------|---------|---------|
@@ -101,8 +100,8 @@ When omitted, tools return data across all stored telemetry.
    - e.g. "last week" → `since: "14d"`, `until: "7d"`
 2. Call `otel-insights_listTraces` once per window with the appropriate `since`/`until` to find the relevant traceId in each period. Optionally filter by `serviceName` to narrow results.
 3. Pick the most comparable traceId from each window (same operation/service, or closest in root span name).
-4. Call `otel-insights_compareTraces` with `traceIdA` (baseline) and `traceIdB` (comparison).
-5. The output shows: duration delta, span count, token delta, spans only in one trace, and shared spans that changed significantly.
+4. Call `otel-insights_getTrace` on **both traceIds in parallel** — fetch them simultaneously.
+5. Compare the two results: look at total duration, token usage per model, span count, error status, and which spans took the most time. Explain what differs between the two runs.
 
 ### "Show me recent traces" / "What happened during this run?"
 1. Call `otel-insights_listTraces` — optionally pass `serviceName` or `since` to narrow down.

@@ -90,30 +90,6 @@
         }
       },
       {
-        "name": "otel-insights_compareTraces",
-        "tags": ["otel", "traces", "comparison", "debugging", "performance"],
-        "toolReferenceName": "otelCompare",
-        "displayName": "Compare Two Traces",
-        "modelDescription": "Compares two traces side by side. Returns a diff table covering: duration delta, span count, error count, total token usage, token breakdown by model, execution path differences (spans only in A or only in B), and shared spans with significant duration changes (>50ms or >25% slower/faster). ALWAYS use this when the user asks why one run was faster/slower than another, wants to compare a passing run to a failing one, or wants to A/B test a prompt or agent change. Get traceIds from listTraces.",
-        "userDescription": "Diff two traces to find what changed between runs.",
-        "canBeReferencedInPrompt": true,
-        "icon": "$(diff)",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "traceIdA": {
-              "type": "string",
-              "description": "The baseline trace ID (e.g. the faster or passing run)."
-            },
-            "traceIdB": {
-              "type": "string",
-              "description": "The trace ID to compare against A (e.g. the slower or failing run)."
-            }
-          },
-          "required": ["traceIdA", "traceIdB"]
-        }
-      },
-      {
         "name": "otel-insights_getServiceSummary",
         "tags": ["otel", "observability", "agents", "performance", "comparison"],
         "toolReferenceName": "otelService",

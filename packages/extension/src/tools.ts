@@ -664,168 +664,19 @@ class GetTraceTool implements vscode.LanguageModelTool<GetTraceInput> {
   }
 }
 
-interface CompareTracesInput {
-  traceIdA: string;
-  traceIdB: string;
-}
-
-class CompareTracesTool implements vscode.LanguageModelTool<CompareTracesInput> {
-  constructor(private readonly store: TelemetryStore) {}
-
-  async invoke(
-    options: vscode.LanguageModelToolInvocationOptions<CompareTracesInput>,
-    _token: vscode.CancellationToken,
-  ): Promise<vscode.LanguageModelToolResult> {
-    const { traceIdA, traceIdB } = options.input;
-
-    if (!traceIdA?.trim() || !traceIdB?.trim()) {
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart('Error: both traceIdA and traceIdB are required.'),
-      ]);
-    }
-
-    const db     = this.store.getDb();
-    const spansA = getSpansByTraceId(db, traceIdA.trim());
-    const spansB = getSpansByTraceId(db, traceIdB.trim());
-
-    if (!spansA.length) {
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(`No spans found for traceIdA: ${traceIdA}`),
-      ]);
-    }
-    if (!spansB.length) {
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(`No spans found for traceIdB: ${traceIdB}`),
-      ]);
-    }
-
-    // ── Helpers ────────────────────────────────────────────────────────────────
-
-    const rootA    = spansA.find(s => !s.parentSpanId) ?? spansA[0]!;
-    const rootB    = spansB.find(s => !s.parentSpanId) ?? spansB[0]!;
-    const errorsA  = spansA.filter(s => s.statusCode === 2);
-    const errorsB  = spansB.filter(s => s.statusCode === 2);
-    const tokensA  = aggregateTokens(spansA);
-    const tokensB  = aggregateTokens(spansB);
-    const totalTokA = tokensA.reduce((s, t) => s + t.totalTokens, 0);
-    const totalTokB = tokensB.reduce((s, t) => s + t.totalTokens, 0);
-
-    // Span name sets for path comparison
-    const namesA = new Set(spansA.map(s => s.name));
-    const namesB = new Set(spansB.map(s => s.name));
-    const onlyInA = [...namesA].filter(n => !namesB.has(n));
-    const onlyInB = [...namesB].filter(n => !namesA.has(n));
-    const inBoth  = [...namesA].filter(n => namesB.has(n));
-
-    // Per-span-name avg duration for shared spans
-    const avgDurA = (name: string) => {
-      const ms = spansA.filter(s => s.name === name).map(s => s.durationMs);
-      return ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : 0;
-    };
-    const avgDurB = (name: string) => {
-      const ms = spansB.filter(s => s.name === name).map(s => s.durationMs);
-      return ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : 0;
-    };
-
-    const delta = (a: number, b: number) => {
-      const d = b - a;
-      return d === 0 ? '=' : d > 0 ? `+${d.toFixed(1)}ms` : `${d.toFixed(1)}ms`;
-    };
-
-    const pct = (a: number, b: number) => {
-      if (a === 0) { return b === 0 ? '0%' : '+∞'; }
-      return `${((b - a) / a * 100).toFixed(0)}%`;
-    };
-
-    // ── Output ─────────────────────────────────────────────────────────────────
-
-    const lines: string[] = [
-      '# Trace Comparison\n',
-      `| | **A** \`${traceIdA.slice(0, 16)}…\` | **B** \`${traceIdB.slice(0, 16)}…\` | Delta |`,
-      '|---|---|---|---|',
-      `| Service | ${rootA.serviceName} | ${rootB.serviceName} | |`,
-      `| Root span | ${rootA.name} | ${rootB.name} | |`,
-      `| Duration | ${rootA.durationMs}ms | ${rootB.durationMs}ms | ${delta(rootA.durationMs, rootB.durationMs)} (${pct(rootA.durationMs, rootB.durationMs)}) |`,
-      `| Spans | ${spansA.length} | ${spansB.length} | ${delta(spansA.length, spansB.length)} |`,
-      `| Errors | ${errorsA.length} | ${errorsB.length} | ${errorsA.length === 0 && errorsB.length === 0 ? '✅ both clean' : errorsA.length > errorsB.length ? '⬇️ B has fewer' : errorsB.length > errorsA.length ? '⬆️ B has more' : '='} |`,
-      `| Total tokens | ${totalTokA.toLocaleString()} | ${totalTokB.toLocaleString()} | ${delta(totalTokA, totalTokB)} (${pct(totalTokA, totalTokB)}) |`,
-      '',
-    ];
-
-    // Token breakdown if both have data
-    if (tokensA.length || tokensB.length) {
-      lines.push('## Token Usage by Model\n');
-      const models = [...new Set([...tokensA.map(t => t.model), ...tokensB.map(t => t.model)])];
-      lines.push('| Model | A tokens | B tokens | Delta |');
-      lines.push('|---|---|---|---|');
-      for (const m of models) {
-        const a = tokensA.find(t => t.model === m);
-        const b = tokensB.find(t => t.model === m);
-        const tA = a?.totalTokens ?? 0;
-        const tB = b?.totalTokens ?? 0;
-        lines.push(`| ${m} | ${tA.toLocaleString()} (${a?.callCount ?? 0} calls) | ${tB.toLocaleString()} (${b?.callCount ?? 0} calls) | ${delta(tA, tB)} |`);
-      }
-      lines.push('');
-    }
-
-    // Execution path diff
-    if (onlyInA.length || onlyInB.length) {
-      lines.push('## Execution Path Differences\n');
-      if (onlyInA.length) {
-        lines.push(`**Only in A:** ${onlyInA.join(', ')}`);
-      }
-      if (onlyInB.length) {
-        lines.push(`**Only in B:** ${onlyInB.join(', ')}`);
-      }
-      lines.push('');
-    }
-
-    // Shared spans with significant duration differences
-    const slowdowns = inBoth
-      .map(name => ({ name, dA: avgDurA(name), dB: avgDurB(name) }))
-      .filter(r => Math.abs(r.dB - r.dA) > 50 || (r.dA > 0 && Math.abs((r.dB - r.dA) / r.dA) > 0.25))
-      .sort((a, b) => Math.abs(b.dB - b.dA) - Math.abs(a.dB - a.dA));
-
-    if (slowdowns.length) {
-      lines.push('## Significant Duration Differences (shared spans)\n');
-      lines.push('| Span | A avg | B avg | Delta |');
-      lines.push('|---|---|---|---|');
-      for (const r of slowdowns) {
-        lines.push(`| ${r.name} | ${r.dA.toFixed(1)}ms | ${r.dB.toFixed(1)}ms | ${delta(r.dA, r.dB)} (${pct(r.dA, r.dB)}) |`);
-      }
-      lines.push('');
-    }
-
-    // Errors
-    if (errorsA.length || errorsB.length) {
-      lines.push('## Errors\n');
-      if (errorsA.length) {
-        lines.push(`**A errors:** ${errorsA.map(s => s.name).join(', ')}`);
-      }
-      if (errorsB.length) {
-        lines.push(`**B errors:** ${errorsB.map(s => s.name).join(', ')}`);
-      }
-    }
-
-    return new vscode.LanguageModelToolResult([
-      new vscode.LanguageModelTextPart(lines.join('\n')),
-    ]);
-  }
-}
 
 export function registerTools(
   context: vscode.ExtensionContext,
   store: TelemetryStore,
 ): void {
   context.subscriptions.push(
-    vscode.lm.registerTool('otel-insights_findRecentErrors',     new FindRecentErrorsTool(store)),
-    vscode.lm.registerTool('otel-insights_getAgentMetrics',      new GetAgentMetricsTool(store)),
-    vscode.lm.registerTool('otel-insights_getSlowestSpans',      new GetSlowestSpansTool(store)),
-    vscode.lm.registerTool('otel-insights_searchLogs',           new SearchLogsTool(store)),
+    vscode.lm.registerTool('otel-insights_findRecentErrors',        new FindRecentErrorsTool(store)),
+    vscode.lm.registerTool('otel-insights_getAgentMetrics',         new GetAgentMetricsTool(store)),
+    vscode.lm.registerTool('otel-insights_getSlowestSpans',         new GetSlowestSpansTool(store)),
+    vscode.lm.registerTool('otel-insights_searchLogs',              new SearchLogsTool(store)),
     vscode.lm.registerTool('otel-insights_summarizeRecentActivity', new SummarizeRecentActivityTool(store)),
-    vscode.lm.registerTool('otel-insights_getServiceSummary',    new GetServiceSummaryTool(store)),
-    vscode.lm.registerTool('otel-insights_listTraces',           new ListTracesTool(store)),
-    vscode.lm.registerTool('otel-insights_getTrace',             new GetTraceTool(store)),
-    vscode.lm.registerTool('otel-insights_compareTraces',        new CompareTracesTool(store)),
+    vscode.lm.registerTool('otel-insights_getServiceSummary',       new GetServiceSummaryTool(store)),
+    vscode.lm.registerTool('otel-insights_listTraces',              new ListTracesTool(store)),
+    vscode.lm.registerTool('otel-insights_getTrace',                new GetTraceTool(store)),
   );
 }
