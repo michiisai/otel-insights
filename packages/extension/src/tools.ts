@@ -612,26 +612,52 @@ class GetTraceTool implements vscode.LanguageModelTool<GetTraceInput> {
 
     const root = spans.find(s => !s.parentSpanId) ?? spans[0]!;
     const hasErrors = spans.some(s => s.statusCode === 2);
+    const errorCount = spans.filter(s => s.statusCode === 2).length;
 
     // Aggregate token usage across all LLM spans in this trace
     const tokensByModel = aggregateTokens(spans);
+    const totalTokens  = tokensByModel.reduce((s, t) => s + t.totalTokens, 0);
+    const totalInput   = tokensByModel.reduce((s, t) => s + t.promptTokens, 0);
+    const totalOutput  = tokensByModel.reduce((s, t) => s + t.completionTokens, 0);
+    const totalLLMCalls = tokensByModel.reduce((s, t) => s + t.callCount, 0);
+    const models = tokensByModel.map(t => t.model).join(', ');
 
     const lines: string[] = [
-      `# Trace: ${traceId}`,
-      `Service: ${root.serviceName} | Root: ${root.name} | Duration: ${root.durationMs}ms | Spans: ${spans.length}${hasErrors ? ' | ❌ Has errors' : ' | ✅ No errors'}`,
+      `# Trace: \`${traceId}\``,
+      '',
+      '## Summary',
+      '| Field | Value |',
+      '|---|---|',
+      `| traceId | \`${traceId}\` |`,
+      `| service | ${root.serviceName} |`,
+      `| root span | ${root.name} |`,
+      `| started | ${nanoToDate(root.startTimeUnixNano)} |`,
+      `| duration | ${root.durationMs}ms |`,
+      `| spans | ${spans.length} |`,
+      `| errors | ${errorCount} |`,
+      `| status | ${hasErrors ? '❌ Has errors' : '✅ No errors'} |`,
+      ...(tokensByModel.length ? [
+        `| total tokens | ${totalTokens.toLocaleString()} |`,
+        `| input tokens | ${totalInput.toLocaleString()} |`,
+        `| output tokens | ${totalOutput.toLocaleString()} |`,
+        `| llm calls | ${totalLLMCalls} |`,
+        `| models | ${models} |`,
+      ] : []),
       '',
     ];
 
-    if (tokensByModel.length) {
-      lines.push('## Token Usage');
+    if (tokensByModel.length > 1) {
+      lines.push('### Token Breakdown by Model');
+      lines.push('| Model | Total | Input | Output | Calls |');
+      lines.push('|---|---|---|---|---|');
       for (const t of tokensByModel) {
-        const ratio = t.promptTokens > 0
-          ? (t.completionTokens / t.promptTokens).toFixed(2)
-          : 'N/A';
-        lines.push(`- **${t.model}**: ${t.totalTokens} tokens (${t.promptTokens} in / ${t.completionTokens} out, ratio ${ratio}) across ${t.callCount} LLM call(s)`);
+        lines.push(`| ${t.model} | ${t.totalTokens.toLocaleString()} | ${t.promptTokens.toLocaleString()} | ${t.completionTokens.toLocaleString()} | ${t.callCount} |`);
       }
       lines.push('');
     }
+
+    lines.push('## Span Detail');
+    lines.push('');
 
     for (const s of spans) {
       const isError = s.statusCode === 2;
