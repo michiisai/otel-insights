@@ -5,6 +5,8 @@ export interface GetTracesOptions {
   sinceNano?: string;
   untilNano?: string;
   serviceName?: string;
+  nameSearch?: string;
+  errorsOnly?: boolean;
   attributeKey?: string;
   attributeValue?: string;
 }
@@ -15,6 +17,8 @@ export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[]
     sinceNano,
     untilNano,
     serviceName,
+    nameSearch,
+    errorsOnly,
     attributeKey,
     attributeValue,
   } = opts;
@@ -25,6 +29,11 @@ export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[]
   if (serviceName) {
     conditions.push('service_name = ?');
     params.push(serviceName);
+  }
+
+  if (nameSearch) {
+    conditions.push('(name LIKE ? OR trace_id IN (SELECT DISTINCT trace_id FROM spans WHERE name LIKE ?))');
+    params.push(`%${nameSearch}%`, `%${nameSearch}%`);
   }
 
   // Attribute filter: restrict to traces containing at least one matching span.
@@ -42,8 +51,9 @@ export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[]
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const havingParts: string[] = [];
-  if (sinceNano) { havingParts.push('MIN(start_time_unix_nano) >= ?'); params.push(sinceNano); }
-  if (untilNano) { havingParts.push('MIN(start_time_unix_nano) <= ?'); params.push(untilNano); }
+  if (sinceNano)   { havingParts.push('MIN(start_time_unix_nano) >= ?'); params.push(sinceNano); }
+  if (untilNano)   { havingParts.push('MIN(start_time_unix_nano) <= ?'); params.push(untilNano); }
+  if (errorsOnly)  { havingParts.push('SUM(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0'); }
   const havingClause = havingParts.length ? `HAVING ${havingParts.join(' AND ')}` : '';
 
   params.push(limit);
@@ -105,4 +115,13 @@ export function getSpansByTraceId(db: QueryableDB, traceId: string): Span[] {
 
 function parseJson(v: unknown): Record<string, unknown> {
   try { return JSON.parse(String(v ?? '{}')) as Record<string, unknown>; } catch { return {}; }
+}
+
+export function getServices(db: QueryableDB): string[] {
+  const rows = db.prepare(`
+    SELECT DISTINCT service_name FROM spans
+    WHERE service_name IS NOT NULL AND service_name != ''
+    ORDER BY service_name ASC
+  `).all();
+  return rows.map(r => String(r['service_name'] ?? ''));
 }

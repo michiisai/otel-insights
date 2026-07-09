@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { TelemetryStore } from '@otel-insights/receiver';
-import { getTraces, getSpansByTraceId, getMetricsData, getLogs } from '@otel-insights/engine';
+import { getTraces, getSpansByTraceId, getServices, getMetricsData, getLogs } from '@otel-insights/engine';
 import type { WebviewToExtension, ExtensionToWebview } from '@otel-insights/types';
 
 export class OtelInsightsPanel {
@@ -64,7 +64,14 @@ export class OtelInsightsPanel {
         this.post({ type: 'status', connected: true, port: this.port });
         break;
       case 'getTraces':
-        this.post({ type: 'traces', data: getTraces(db) });
+        this.post({ type: 'traces', data: getTraces(db, {
+          nameSearch: msg.search,
+          serviceName: msg.service,
+          errorsOnly: msg.errorsOnly,
+        }) });
+        break;
+      case 'getServices':
+        this.post({ type: 'services', data: getServices(db) });
         break;
       case 'getSpans':
         this.post({ type: 'spans', traceId: msg.traceId, data: getSpansByTraceId(db, msg.traceId) });
@@ -131,6 +138,13 @@ export class OtelInsightsPanel {
 
       <!-- Left: trace list + waterfall -->
       <div class="traces-left">
+        <div class="traces-filters">
+          <input  id="trace-search"   type="text" placeholder="Search traces…" />
+          <select id="trace-service">
+            <option value="">All services</option>
+          </select>
+          <button id="trace-errors-btn" class="filter-toggle" title="Errors only">⚠ Errors</button>
+        </div>
         <div class="traces-header" aria-hidden="true">
           <span class="expand-icon"></span>
           <span class="cell cell--name">Trace</span>

@@ -15,13 +15,18 @@
   // ── Elements ─────────────────────────────────────────────────────────────────
   const $ = (/** @type {string} */ id) => document.getElementById(id);
 
-  const statusBadge = $('status-badge');
-  const refreshBtn  = $('refresh-btn');
-  const clearBtn    = $('clear-btn');
-  const tracesList  = $('traces-list');
-  const logsList    = $('logs-list');
-  const logFilter   = /** @type {HTMLInputElement}  */ ($('log-filter'));
-  const logSeverity = /** @type {HTMLSelectElement} */ ($('log-severity'));
+  const statusBadge  = $('status-badge');
+  const refreshBtn   = $('refresh-btn');
+  const clearBtn     = $('clear-btn');
+  const tracesList   = $('traces-list');
+  const logsList     = $('logs-list');
+  const logFilter    = /** @type {HTMLInputElement}  */ ($('log-filter'));
+  const logSeverity  = /** @type {HTMLSelectElement} */ ($('log-severity'));
+  const traceSearch  = /** @type {HTMLInputElement}  */ ($('trace-search'));
+  const traceService = /** @type {HTMLSelectElement} */ ($('trace-service'));
+  const traceErrBtn  = $('trace-errors-btn');
+
+  let errorsOnly = false;
 
   // ── Tab switching ─────────────────────────────────────────────────────────────
   document.querySelectorAll('.tab').forEach(tab => {
@@ -43,9 +48,18 @@
   });
 
   function loadCurrentTab() {
-    if (activeTab === 'traces')           { vscode.postMessage({ type: 'getTraces' }); }
+    if (activeTab === 'traces')           { fetchTraces(); }
     else if (activeTab === 'performance') { vscode.postMessage({ type: 'getMetrics' }); }
     else if (activeTab === 'logs')        { fetchLogs(); }
+  }
+
+  function fetchTraces() {
+    vscode.postMessage({
+      type:       'getTraces',
+      search:     traceSearch?.value  || undefined,
+      service:    traceService?.value || undefined,
+      errorsOnly: errorsOnly || undefined,
+    });
   }
 
   function fetchLogs() {
@@ -65,6 +79,15 @@
   logSeverity?.addEventListener('change', fetchLogs);
   logFilter?.addEventListener('input', fetchLogs);
   logFilter?.addEventListener('keydown', e => { if (e.key === 'Enter') { fetchLogs(); } });
+
+  traceSearch?.addEventListener('input', fetchTraces);
+  traceSearch?.addEventListener('keydown', e => { if (e.key === 'Enter') { fetchTraces(); } });
+  traceService?.addEventListener('change', fetchTraces);
+  traceErrBtn?.addEventListener('click', () => {
+    errorsOnly = !errorsOnly;
+    traceErrBtn.classList.toggle('active', errorsOnly);
+    fetchTraces();
+  });
 
   // ── Traces panel resize ───────────────────────────────────────────────────────
   (function initResizer() {
@@ -113,12 +136,13 @@
   window.addEventListener('message', event => {
     const msg = event.data;
     switch (msg.type) {
-      case 'status':  renderStatus(msg);                    break;
-      case 'traces':  renderTraces(msg.data);               break;
-      case 'spans':   renderSpans(msg.traceId, msg.data);   break;
+      case 'status':   renderStatus(msg);                    break;
+      case 'traces':   renderTraces(msg.data);               break;
+      case 'services': renderServices(msg.data);             break;
+      case 'spans':    renderSpans(msg.traceId, msg.data);   break;
       case 'metrics': renderMetrics(msg.data);              break;
       case 'logs':    renderLogs(msg.data);                 break;
-      case 'cleared': loadCurrentTab();                     break;
+      case 'cleared': vscode.postMessage({ type: 'getServices' }); loadCurrentTab(); break;
     }
   });
 
@@ -127,6 +151,14 @@
     if (!statusBadge) { return; }
     statusBadge.textContent = s.connected ? `● :${s.port}` : '● offline';
     statusBadge.className   = `badge ${s.connected ? 'badge--ok' : 'badge--err'}`;
+  }
+
+  // ── Services dropdown ────────────────────────────────────────────────────────
+  function renderServices(/** @type {string[]} */ services) {
+    if (!traceService) { return; }
+    const current = traceService.value;
+    traceService.innerHTML = '<option value="">All services</option>' +
+      services.map(s => `<option value="${esc(s)}"${s === current ? ' selected' : ''}>${esc(s)}</option>`).join('');
   }
 
   // ── Traces ────────────────────────────────────────────────────────────────────
@@ -516,5 +548,6 @@
 
   // ── Boot ──────────────────────────────────────────────────────────────────────
   vscode.postMessage({ type: 'ready' });
+  vscode.postMessage({ type: 'getServices' });
   vscode.postMessage({ type: 'getTraces' });
 }());

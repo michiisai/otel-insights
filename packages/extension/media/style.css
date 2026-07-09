@@ -108,7 +108,49 @@ body {
 /* Traces panel fills available height without extra padding (split handles spacing) */
 #traces-panel.panel { padding: 0; overflow: hidden; }
 
-/* ── Traces split layout ─────────────────────────────────────────────── */
+/* ── Traces filter toolbar ───────────────────────────────────────────── */
+.traces-filters {
+  display:     flex;
+  gap:         6px;
+  padding:     6px 8px;
+  flex-shrink: 0;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  background:  var(--bg-subtle);
+}
+
+.traces-filters input,
+.traces-filters select {
+  background:    var(--bg-input);
+  border:        1px solid var(--border);
+  border-radius: 4px;
+  color:         var(--fg-input);
+  font-family:   var(--font);
+  font-size:     var(--font-size);
+  padding:       3px 7px;
+  outline:       none;
+}
+.traces-filters input         { flex: 1; min-width: 0; }
+.traces-filters select        { flex-shrink: 0; }
+.traces-filters input:focus,
+.traces-filters select:focus  { border-color: var(--accent); }
+
+.filter-toggle {
+  background:    transparent;
+  border:        1px solid var(--border);
+  border-radius: 4px;
+  color:         var(--fg-muted);
+  cursor:        pointer;
+  font-family:   var(--font);
+  font-size:     12px;
+  padding:       3px 8px;
+  white-space:   nowrap;
+  flex-shrink:   0;
+}
+.filter-toggle:hover          { color: var(--fg); border-color: var(--fg-muted); }
+.filter-toggle.active         { color: var(--err); border-color: var(--err); background: rgba(244,71,71,0.1); }
+
+
 .traces-split {
   display:  flex;
   flex:     1;
