@@ -134,6 +134,7 @@ export class OtelInsightsPanel {
           <span class="expand-icon"></span>
           <span class="cell cell--name">Trace</span>
           <span class="cell cell--service">Service</span>
+          <span class="cell cell--ts">Time</span>
           <span class="cell cell--dur">Duration</span>
           <span class="cell cell--spans">Spans</span>
           <span class="pill pill--err" style="visibility:hidden">ERR</span>

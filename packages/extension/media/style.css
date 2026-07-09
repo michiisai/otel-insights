@@ -376,6 +376,7 @@ body {
 /* ── Shared cells ─────────────────────────────────────────────────────── */
 .cell--name    { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .cell--service { color: var(--fg-muted); font-size: 11px; min-width: 80px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.cell--ts      { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); min-width: 140px; flex-shrink: 0; white-space: nowrap; }
 .cell--dur     { font-family: var(--font-mono); font-size: 11px; color: var(--ok); min-width: 55px; text-align: right; flex-shrink: 0; }
 .cell--spans   { color: var(--fg-muted); font-size: 11px; min-width: 55px; text-align: right; flex-shrink: 0; }
 

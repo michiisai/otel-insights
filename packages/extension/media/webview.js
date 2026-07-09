@@ -99,6 +99,7 @@
         <span class="expand-icon" aria-hidden="true">${expandedTraces.has(t.traceId) ? '▾' : '▸'}</span>
         <span class="cell cell--name" title="${esc(t.traceId)}">${esc(t.rootSpanName)}</span>
         <span class="cell cell--service">${esc(t.serviceName)}</span>
+        <span class="cell cell--ts">${fmtNano(t.startTimeUnixNano)}</span>
         <span class="cell cell--dur">${fmtMs(t.durationMs)}</span>
         <span class="cell cell--spans">${t.spanCount} span${t.spanCount !== 1 ? 's' : ''}</span>
         <span class="pill pill--err${t.hasError ? '' : ' pill--hidden'}" aria-hidden="${t.hasError ? 'false' : 'true'}">ERR</span>
