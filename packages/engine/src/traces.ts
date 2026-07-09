@@ -58,7 +58,9 @@ export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[]
                THEN name END)    AS root_span_name,
       MAX(service_name)          AS service_name,
       MAX(CASE WHEN (parent_span_id IS NULL OR parent_span_id = '')
-               THEN duration_ms  ELSE 0 END) AS root_duration_ms
+               THEN duration_ms  ELSE 0 END) AS root_duration_ms,
+      -- fallback: name of the span with the earliest start time
+      MIN(name)                  AS earliest_span_name
     FROM spans
     ${whereClause}
     GROUP BY trace_id
@@ -69,7 +71,7 @@ export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[]
 
   return rows.map(r => ({
     traceId:           String(r['trace_id']          ?? ''),
-    rootSpanName:      String(r['root_span_name']    ?? r['trace_id'] ?? ''),
+    rootSpanName:      String(r['root_span_name']    ?? r['earliest_span_name'] ?? r['trace_id'] ?? ''),
     serviceName:       String(r['service_name']      ?? ''),
     startTimeUnixNano: String(r['start_time_unix_nano'] ?? '0'),
     durationMs:        Number(r['root_duration_ms']  ?? 0),

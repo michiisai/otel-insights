@@ -126,16 +126,30 @@ export class OtelInsightsPanel {
 
   <!-- Traces tab -->
   <div id="traces-panel" class="panel active" role="tabpanel">
-    <div class="traces-header" aria-hidden="true">
-      <span class="expand-icon"></span>
-      <span class="cell cell--name">Trace</span>
-      <span class="cell cell--service">Service</span>
-      <span class="cell cell--dur">Duration</span>
-      <span class="cell cell--spans">Spans</span>
-      <span class="pill pill--err" style="visibility:hidden">ERR</span>
-    </div>
-    <div id="traces-list" class="list-container">
-      <div class="empty-state">Loading traces…</div>
+    <div class="traces-split">
+
+      <!-- Left: trace list + waterfall -->
+      <div class="traces-left">
+        <div class="traces-header" aria-hidden="true">
+          <span class="expand-icon"></span>
+          <span class="cell cell--name">Trace</span>
+          <span class="cell cell--service">Service</span>
+          <span class="cell cell--dur">Duration</span>
+          <span class="cell cell--spans">Spans</span>
+          <span class="pill pill--err" style="visibility:hidden">ERR</span>
+        </div>
+        <div id="traces-list" class="list-container">
+          <div class="empty-state">Loading traces…</div>
+        </div>
+      </div>
+
+      <!-- Right: span detail panel -->
+      <div class="traces-right" id="span-detail-panel">
+        <div class="span-detail-placeholder">
+          ← Expand a trace and click a span to view its details
+        </div>
+      </div>
+
     </div>
   </div>
 

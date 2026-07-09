@@ -11,8 +11,6 @@
   let activeTab = 'traces';
   /** @type {Set<string>} */
   const expandedTraces = new Set();
-  /** @type {Set<string>} expanded span detail drawers */
-  const expandedSpans = new Set();
 
   // ── Elements ─────────────────────────────────────────────────────────────────
   const $ = (/** @type {string} */ id) => document.getElementById(id);
@@ -68,31 +66,6 @@
   logFilter?.addEventListener('input', fetchLogs);
   logFilter?.addEventListener('keydown', e => { if (e.key === 'Enter') { fetchLogs(); } });
 
-  // ── Span detail: single delegated listener (attached once) ───────────────────
-  tracesList?.addEventListener('click', e => {
-    const spanRow = /** @type {HTMLElement|null} */ (
-      /** @type {HTMLElement} */ (e.target)?.closest('.span-row')
-    );
-    if (!spanRow) { return; }
-
-    const spanId = spanRow.dataset.spanId;
-    if (!spanId) { return; }
-
-    const detail = document.getElementById(`sd-${spanId}`);
-    if (!detail) { return; }
-
-    const icon = spanRow.querySelector('.span-expand-icon');
-    if (expandedSpans.has(spanId)) {
-      expandedSpans.delete(spanId);
-      detail.style.display = 'none';
-      if (icon) { icon.textContent = '▸'; }
-    } else {
-      expandedSpans.add(spanId);
-      detail.style.display = 'block';
-      if (icon) { icon.textContent = '▾'; }
-    }
-  });
-
   // ── Message handler ───────────────────────────────────────────────────────────
   window.addEventListener('message', event => {
     const msg = event.data;
@@ -130,7 +103,7 @@
         <span class="cell cell--spans">${t.spanCount} span${t.spanCount !== 1 ? 's' : ''}</span>
         <span class="pill pill--err${t.hasError ? '' : ' pill--hidden'}" aria-hidden="${t.hasError ? 'false' : 'true'}">ERR</span>
       </div>
-      <div class="spans-container" id="sc-${esc(t.traceId)}"
+      <div class="waterfall-container" id="sc-${esc(t.traceId)}"
            style="display:${expandedTraces.has(t.traceId) ? 'block' : 'none'}">
         <div class="loading-row">loading spans…</div>
       </div>
@@ -157,7 +130,7 @@
     });
   }
 
-  // ── Span tree ─────────────────────────────────────────────────────────────────
+  // ── Span waterfall ────────────────────────────────────────────────────────────
   function renderSpans(/** @type {string} */ traceId, /** @type {any[]} */ spans) {
     const container = $(`sc-${traceId}`);
     if (!container) { return; }
@@ -166,7 +139,7 @@
       return;
     }
 
-    // Build tree
+    // Build parent-child tree
     /** @type {Record<string,any>} */
     const byId = {};
     spans.forEach(s => { byId[s.spanId] = { ...s, children: [] }; });
@@ -180,35 +153,97 @@
       }
     });
 
+    // Compute timeline range with BigInt for nanosecond precision
+    let traceStartNano = BigInt(spans[0].startTimeUnixNano);
+    let traceEndNano   = traceStartNano;
+    spans.forEach(s => {
+      const start = BigInt(s.startTimeUnixNano);
+      const end   = start + BigInt(Math.round(s.durationMs * 1_000_000));
+      if (start < traceStartNano) { traceStartNano = start; }
+      if (end   > traceEndNano)   { traceEndNano   = end; }
+    });
+    const traceTotalNano = traceEndNano - traceStartNano;
+
     /** @param {any} node @param {number} depth @returns {string} */
     function nodeHtml(node, depth) {
       const isErr     = node.statusCode === 2;
-      const indent    = depth * 18 + 8;
-      const isOpen    = expandedSpans.has(node.spanId);
-      const attrCount = Object.keys(node.attributes ?? {}).length;
+      const indent    = depth * 14;
+      const startNano = BigInt(node.startTimeUnixNano);
+      const durNano   = BigInt(Math.round(node.durationMs * 1_000_000));
+      const offsetPct = traceTotalNano > 0n
+        ? Number((startNano - traceStartNano) * 10000n / traceTotalNano) / 100
+        : 0;
+      const widthPct = traceTotalNano > 0n
+        ? Math.max(0.3, Number(durNano * 10000n / traceTotalNano) / 100)
+        : 100;
+      const barColor = isErr ? 'var(--err)' : spanKindColor(node.kind);
 
       return `
-        <div class="span-row ${isErr ? 'row--error' : ''}"
-             style="padding-left:${indent}px"
-             data-span-id="${esc(node.spanId)}">
-          <span class="span-expand-icon" aria-hidden="true">${isOpen ? '▾' : '▸'}</span>
-          <span class="span-kind kind-${node.kind}">${SPAN_KIND[node.kind] ?? '?'}</span>
-          <span class="cell cell--name">${esc(node.name)}</span>
-          <span class="cell cell--service">${esc(node.serviceName)}</span>
-          <span class="cell cell--dur">${fmtMs(node.durationMs)}</span>
-          ${attrCount > 0 ? `<span class="attr-badge" title="${attrCount} attribute${attrCount !== 1 ? 's' : ''}">${attrCount}</span>` : ''}
+        <div class="waterfall-row ${isErr ? 'row--error' : ''}"
+             data-span-id="${esc(node.spanId)}"
+             data-trace-id="${esc(traceId)}">
+          <div class="waterfall-info" style="padding-left:${indent + 4}px">
+            <span class="span-kind kind-${node.kind}">${SPAN_KIND[node.kind] ?? '?'}</span>
+            <span class="waterfall-name" title="${esc(node.name)}">${esc(node.name)}</span>
+          </div>
+          <div class="waterfall-bar-area">
+            <div class="waterfall-bar"
+                 style="left:${offsetPct.toFixed(2)}%;width:${widthPct.toFixed(2)}%;background:${barColor}">
+            </div>
+          </div>
+          <span class="waterfall-dur">${fmtMs(node.durationMs)}</span>
           <span class="pill pill--err${isErr ? '' : ' pill--hidden'}" aria-hidden="${isErr ? 'false' : 'true'}">ERR</span>
-        </div>
-        <div class="span-detail" id="sd-${esc(node.spanId)}"
-             style="display:${isOpen ? 'block' : 'none'}; padding-left:${indent + 36}px">
-          ${spanDetailHtml(node)}
         </div>
         ${node.children.map(c => nodeHtml(c, depth + 1)).join('')}
       `;
     }
 
     container.innerHTML = roots.map(r => nodeHtml(r, 0)).join('');
+
+    // Clicking a span row shows its detail in the right panel
+    container.querySelectorAll('.waterfall-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const spanId = /** @type {HTMLElement} */ (row).dataset.spanId ?? '';
+        const node   = byId[spanId];
+        if (!node) { return; }
+        document.querySelectorAll('.waterfall-row.selected').forEach(r => r.classList.remove('selected'));
+        row.classList.add('selected');
+        showSpanDetail(node);
+      });
+    });
   }
+
+  /** @param {number} kind @returns {string} */
+  function spanKindColor(kind) {
+    switch (kind) {
+      case 2:  return '#4fc3f7';       // SERVER
+      case 3:  return 'var(--ok)';     // CLIENT
+      case 4:  return 'var(--warn-fg)'; // PRODUCER
+      case 5:  return 'var(--warn-fg)'; // CONSUMER
+      default: return 'var(--accent)'; // INTERNAL / unspecified
+    }
+  }
+
+  /** @param {any} node */
+  function showSpanDetail(node) {
+    const panel = $('span-detail-panel');
+    if (!panel) { return; }
+    panel.innerHTML = `
+      <div class="span-detail-panel-header">Span Details</div>
+      ${spanDetailHtml(node)}
+    `;
+  }
+
+  // Toggle long attribute values in the right panel (delegated)
+  $('span-detail-panel')?.addEventListener('click', e => {
+    const row = /** @type {HTMLElement} */ (e.target)?.closest('.attr-row-long');
+    if (!row) { return; }
+    const textEl    = row.querySelector('.attr-val-text');
+    const chevron   = row.querySelector('.attr-chevron');
+    if (!textEl) { return; }
+    const collapsed = textEl.classList.toggle('collapsed');
+    if (chevron) { chevron.textContent = collapsed ? '▶' : '▾'; }
+  });
 
   /** @param {any} node @returns {string} */
   function spanDetailHtml(node) {
@@ -219,29 +254,39 @@
     const attrEntries   = Object.entries(node.attributes ?? {});
 
     const metaHtml = [
-      ['Span ID',   `<span class="mono" title="${esc(node.spanId)}">${esc(node.spanId.slice(0, 8))}…</span>`],
+      ['Span ID',   `<span class="mono">${esc(node.spanId)}</span>`],
       ['Duration',  `<span class="mono">${fmtMs(node.durationMs)}</span>`],
       ['Kind',      kindText],
       ['Status',    `<span class="${node.statusCode === 2 ? 'text-err' : ''}">${statusText}${node.statusMessage ? ': ' + esc(node.statusMessage) : ''}</span>`],
       ['Start',     `<span class="mono">${fmtNano(node.startTimeUnixNano)}</span>`],
     ].map(([k, v]) => `<div class="meta-key">${k}</div><div class="meta-val">${v}</div>`).join('');
 
+    const LONG_THRESHOLD = 120;
+
     const attrsHtml = attrEntries.length > 0
       ? `<div class="attrs-section">
            <div class="attrs-title">Attributes (${attrEntries.length})</div>
-           <div class="attrs-scroll">
-             <table class="attrs-table">
-               ${attrEntries.map(([k, v]) => `
-                 <tr>
-                   <td class="attr-key">${esc(k)}</td>
-                   <td class="attr-val">${esc(fmtAttr(v))}</td>
-                 </tr>`).join('')}
-             </table>
-           </div>
+           <table class="attrs-table">
+             ${attrEntries.map(([k, v]) => {
+               const text = fmtAttr(v);
+               const isLong = text.length > LONG_THRESHOLD;
+               const keyCell = isLong
+                 ? `<td class="attr-key"><span class="attr-chevron">▶</span>${esc(k)}</td>`
+                 : `<td class="attr-key">${esc(k)}</td>`;
+               const valCell = isLong
+                 ? `<td class="attr-val"><span class="attr-val-text collapsed">${esc(text)}</span></td>`
+                 : `<td class="attr-val"><span class="attr-val-text">${esc(text)}</span></td>`;
+               return `<tr class="${isLong ? 'attr-row-long' : ''}">${keyCell}${valCell}</tr>`;
+             }).join('')}
+           </table>
          </div>`
       : '<div class="attrs-empty">No attributes</div>';
 
-    return `<div class="span-detail-inner"><div class="span-meta-grid">${metaHtml}</div>${attrsHtml}</div>`;
+    return `
+      <div class="right-panel-span-name">${esc(node.name)}</div>
+      <div class="span-meta-grid">${metaHtml}</div>
+      ${attrsHtml}
+    `;
   }
 
   /** @param {unknown} v @returns {string} */
