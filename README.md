@@ -93,7 +93,7 @@ Data persists across VS Code restarts. Use **Clear All Data** to wipe it.
 
 ## Roadmap
 
-- [ ] Timeline / waterfall chart for traces
+- [x] Timeline / waterfall chart for traces
 - [ ] Multi-service filtering
 - [ ] Alerting rules on error rate / latency
 - [ ] Export to JSON / CSV
