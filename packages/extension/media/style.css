@@ -212,7 +212,7 @@ body {
 /* subtle zebra stripe for every other span */
 .waterfall-row:nth-child(even) { background: transparent; }
 .waterfall-row:hover    { background: var(--bg-hover) !important; }
-.waterfall-row.selected { background: var(--bg-active) !important; color: var(--vscode-list-activeSelectionForeground, #fff); }
+.waterfall-row.selected { background: var(--bg-hover) !important; outline: 1px solid var(--border); }
 .waterfall-row.row--error { background: rgba(244, 71, 71, 0.06) !important; }
 .waterfall-row.row--error:hover { background: rgba(244, 71, 71, 0.12) !important; }
 
@@ -439,9 +439,11 @@ body {
   text-align:    center;
   flex-shrink:   0;
 }
-.kind-2 { background: rgba(0, 122, 204, 0.15); color: #4fc3f7; }         /* SERVER */
-.kind-3 { background: rgba(78, 201, 176, 0.15); color: var(--ok); }      /* CLIENT */
-.kind-4, .kind-5 { background: rgba(204, 167, 0, 0.15); color: var(--warn-fg); } /* PRODUCER/CONSUMER */
+.kind-1 { background: rgba(179, 157, 219, 0.15); color: #b39ddb; }       /* INTERNAL  — soft purple */
+.kind-2 { background: rgba(79, 195, 247, 0.15);  color: #4fc3f7; }       /* SERVER    — sky blue   */
+.kind-3 { background: rgba(78, 201, 176, 0.15);  color: #4ec9b0; }       /* CLIENT    — teal       */
+.kind-4 { background: rgba(255, 167, 38,  0.15); color: #ffa726; }       /* PRODUCER  — amber      */
+.kind-5 { background: rgba(129, 199, 132, 0.15); color: #81c784; }       /* CONSUMER  — green      */
 
 /* ── Pills & badges ───────────────────────────────────────────────────── */
 .pill {

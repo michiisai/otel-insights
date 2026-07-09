@@ -268,11 +268,12 @@
   /** @param {number} kind @returns {string} */
   function spanKindColor(kind) {
     switch (kind) {
-      case 2:  return '#4fc3f7';       // SERVER
-      case 3:  return 'var(--ok)';     // CLIENT
-      case 4:  return 'var(--warn-fg)'; // PRODUCER
-      case 5:  return 'var(--warn-fg)'; // CONSUMER
-      default: return 'var(--accent)'; // INTERNAL / unspecified
+      case 1:  return '#b39ddb'; // INTERNAL  — soft purple
+      case 2:  return '#4fc3f7'; // SERVER    — sky blue
+      case 3:  return '#4ec9b0'; // CLIENT    — teal
+      case 4:  return '#ffa726'; // PRODUCER  — amber
+      case 5:  return '#81c784'; // CONSUMER  — green
+      default: return '#888888'; // UNSPECIFIED — gray
     }
   }
 
