@@ -137,24 +137,27 @@
       return;
     }
 
-    tracesList.innerHTML = traces.map(t => `
-      <div class="trace-row ${t.hasError ? 'row--error' : ''}" data-id="${esc(t.traceId)}">
-        <span class="expand-icon" aria-hidden="true">${expandedTraces.has(t.traceId) ? '▾' : '▸'}</span>
-        <span class="cell cell--name">
-          <span class="trace-name">${esc(t.rootSpanName)}</span>
-          <span class="trace-id">${esc(t.traceId)}</span>
-        </span>
-        <span class="cell cell--service">${esc(t.serviceName)}</span>
-        <span class="cell cell--ts">${fmtNano(t.startTimeUnixNano)}</span>
-        <span class="cell cell--dur">${fmtMs(t.durationMs)}</span>
-        <span class="cell cell--spans">${t.spanCount} span${t.spanCount !== 1 ? 's' : ''}</span>
-        <span class="pill pill--err${t.hasError ? '' : ' pill--hidden'}" aria-hidden="${t.hasError ? 'false' : 'true'}">ERR</span>
-      </div>
-      <div class="waterfall-container" id="sc-${esc(t.traceId)}"
-           style="display:${expandedTraces.has(t.traceId) ? 'block' : 'none'}">
-        <div class="loading-row">loading spans…</div>
-      </div>
-    `).join('');
+    tracesList.innerHTML = traces.map(t => {
+      const isOpen = expandedTraces.has(t.traceId);
+      return `
+        <div class="trace-row ${t.hasError ? 'row--error' : ''} ${isOpen ? '' : 'collapsed'}" data-id="${esc(t.traceId)}">
+          <span class="expand-icon" aria-hidden="true">${isOpen ? '▾' : '▸'}</span>
+          <span class="cell cell--name">
+            <span class="trace-name">${esc(t.rootSpanName)}</span>
+            <span class="trace-id">${esc(t.traceId)}</span>
+          </span>
+          <span class="cell cell--service">${esc(t.serviceName)}</span>
+          <span class="cell cell--ts">${fmtNano(t.startTimeUnixNano)}</span>
+          <span class="cell cell--dur">${fmtMs(t.durationMs)}</span>
+          <span class="cell cell--spans">${t.spanCount} span${t.spanCount !== 1 ? 's' : ''}</span>
+          <span class="pill pill--err${t.hasError ? '' : ' pill--hidden'}" aria-hidden="${t.hasError ? 'false' : 'true'}">ERR</span>
+        </div>
+        <div class="waterfall-container" id="sc-${esc(t.traceId)}"
+             style="display:${isOpen ? 'block' : 'none'}">
+          <div class="loading-row">loading spans…</div>
+        </div>
+      `;
+    }).join('');
 
     tracesList.querySelectorAll('.trace-row').forEach(row => {
       row.addEventListener('click', () => {
@@ -166,10 +169,12 @@
         if (expandedTraces.has(id)) {
           expandedTraces.delete(id);
           container.style.display = 'none';
+          row.classList.add('collapsed');
           if (icon) { icon.textContent = '▸'; }
         } else {
           expandedTraces.add(id);
           container.style.display = 'block';
+          row.classList.remove('collapsed');
           if (icon) { icon.textContent = '▾'; }
           vscode.postMessage({ type: 'getSpans', traceId: id });
         }

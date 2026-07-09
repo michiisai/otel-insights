@@ -192,25 +192,29 @@ body {
 
 /* ── Waterfall chart ─────────────────────────────────────────────────── */
 .waterfall-container {
-  border-left: 2px solid var(--border);
-  margin-left: 20px;
-  padding:     2px 0;
+  border:        1px solid var(--border);
+  border-top:    none;
+  border-radius: 0 0 4px 4px;
+  margin:        0 0 4px 0;
+  padding:       4px 0 6px;
 }
 
 .waterfall-row {
   display:     flex;
   align-items: center;
-  gap:         4px;
-  padding:     3px 8px 3px 4px;
+  gap:         6px;
+  padding:     5px 10px 5px 4px;
   cursor:      pointer;
   border-radius: 3px;
   font-size:   12px;
   user-select: none;
 }
-.waterfall-row:hover    { background: var(--bg-hover); }
+/* subtle zebra stripe for every other span */
+.waterfall-row:nth-child(even) { background: transparent; }
+.waterfall-row:hover    { background: var(--bg-hover) !important; }
 .waterfall-row.selected { background: var(--bg-active) !important; color: var(--vscode-list-activeSelectionForeground, #fff); }
-.waterfall-row.row--error { background: rgba(244, 71, 71, 0.06); }
-.waterfall-row.row--error:hover { background: rgba(244, 71, 71, 0.12); }
+.waterfall-row.row--error { background: rgba(244, 71, 71, 0.06) !important; }
+.waterfall-row.row--error:hover { background: rgba(244, 71, 71, 0.12) !important; }
 
 .waterfall-info {
   display:     flex;
@@ -263,8 +267,9 @@ body {
 .list-container {
   display:        flex;
   flex-direction: column;
-  gap:            1px;
+  gap:            4px;
   flex:           1;
+  padding:        6px 6px 12px;
 }
 
 .empty-state {
@@ -293,18 +298,25 @@ body {
 }
 
 .trace-row {
-  display:       flex;
-  align-items:   center;
-  gap:           8px;
-  padding:       5px 8px;
-  border-radius: 4px;
-  cursor:        pointer;
-  border:        1px solid transparent;
-  user-select:   none;
+  display:          flex;
+  align-items:      center;
+  gap:              8px;
+  padding:          7px 10px;
+  border-radius:    4px 4px 0 0;
+  cursor:           pointer;
+  border:           1px solid var(--border);
+  border-bottom:    none;
+  background:       var(--bg-subtle);
+  user-select:      none;
 }
 .trace-row:hover  { background: var(--bg-hover); }
-.row--error       { background: rgba(244, 71, 71, 0.06); }
-.row--error:hover { background: rgba(244, 71, 71, 0.12); }
+/* when trace is collapsed give it a full rounded border */
+.trace-row.collapsed {
+  border-radius:  4px;
+  border-bottom:  1px solid var(--border);
+}
+.row--error       { border-left: 3px solid var(--err) !important; background: rgba(244, 71, 71, 0.06) !important; }
+.row--error:hover { background: rgba(244, 71, 71, 0.12) !important; }
 
 .expand-icon { color: var(--fg-muted); width: 12px; flex-shrink: 0; }
 
@@ -315,8 +327,12 @@ body {
 .span-meta-grid {
   display:               grid;
   grid-template-columns: max-content 1fr;
-  gap:                   3px 12px;
+  gap:                   4px 12px;
   align-items:           baseline;
+  background:            var(--bg);
+  border:                1px solid var(--border);
+  border-radius:         4px;
+  padding:               8px 10px;
   margin-bottom:         10px;
 }
 .meta-key {
@@ -328,7 +344,15 @@ body {
 .meta-val { word-break: break-all; font-size: 12px; }
 
 /* attributes table */
-.attrs-section { display: flex; flex-direction: column; gap: 5px; }
+.attrs-section {
+  display:       flex;
+  flex-direction: column;
+  gap:           6px;
+  background:    var(--bg);
+  border:        1px solid var(--border);
+  border-radius: 4px;
+  padding:       8px 10px;
+}
 .attrs-title {
   font-size:      10px;
   font-weight:    600;
@@ -344,7 +368,7 @@ body {
 .attrs-table tr:hover { background: var(--bg-hover); }
 .attr-key {
   width:         40%;
-  padding:       2px 8px 2px 0;
+  padding:       5px 8px 5px 0;
   color:         var(--fg-muted);
   font-family:   var(--font-mono);
   font-size:     11px;
@@ -354,7 +378,7 @@ body {
   vertical-align: top;
 }
 .attr-val {
-  padding:       2px 0;
+  padding:       5px 0;
   font-family:   var(--font-mono);
   font-size:     11px;
   word-break:    break-all;
