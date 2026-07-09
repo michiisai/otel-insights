@@ -66,6 +66,49 @@
   logFilter?.addEventListener('input', fetchLogs);
   logFilter?.addEventListener('keydown', e => { if (e.key === 'Enter') { fetchLogs(); } });
 
+  // ── Traces panel resize ───────────────────────────────────────────────────────
+  (function initResizer() {
+    const divider    = $('traces-divider');
+    const rightPanel = $('span-detail-panel');
+    const split      = divider?.parentElement;
+    if (!divider || !rightPanel || !split) { return; }
+
+    // Cast to non-null after guard so TypeScript doesn't complain inside closures
+    const divEl   = /** @type {HTMLElement} */ (divider);
+    const rightEl = /** @type {HTMLElement} */ (rightPanel);
+    const splitEl = /** @type {HTMLElement} */ (split);
+
+    let startX = 0;
+    let startW = 0;
+
+    divEl.addEventListener('mousedown', e => {
+      startX = e.clientX;
+      startW = rightEl.getBoundingClientRect().width;
+      divEl.classList.add('dragging');
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+
+      function onMove(/** @type {MouseEvent} */ ev) {
+        const delta  = startX - ev.clientX;
+        const splitW = splitEl.getBoundingClientRect().width;
+        const newW   = Math.min(Math.max(startW + delta, splitW * 0.2), splitW * 0.5);
+        rightEl.style.width = `${newW}px`;
+      }
+
+      function onUp() {
+        divEl.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      e.preventDefault();
+    });
+  }());
+
   // ── Message handler ───────────────────────────────────────────────────────────
   window.addEventListener('message', event => {
     const msg = event.data;
@@ -198,7 +241,7 @@
           <span class="waterfall-dur">${fmtMs(node.durationMs)}</span>
           <span class="pill pill--err${isErr ? '' : ' pill--hidden'}" aria-hidden="${isErr ? 'false' : 'true'}">ERR</span>
         </div>
-        ${node.children.map(c => nodeHtml(c, depth + 1)).join('')}
+        ${node.children.map((/** @type {any} */ c) => nodeHtml(c, depth + 1)).join('')}
       `;
     }
 

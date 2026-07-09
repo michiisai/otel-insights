@@ -104,7 +104,8 @@ export class OtelInsightsPanel {
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none';
                  style-src ${wv.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}';">
+                 script-src 'nonce-${nonce}';
+                 img-src data:;">
   <link href="${styleUri}" rel="stylesheet">
   <title>OTel Insights</title>
 </head>
@@ -143,6 +144,9 @@ export class OtelInsightsPanel {
           <div class="empty-state">Loading traces…</div>
         </div>
       </div>
+
+      <!-- Resize divider -->
+      <div class="traces-divider" id="traces-divider" title="Drag to resize"></div>
 
       <!-- Right: span detail panel -->
       <div class="traces-right" id="span-detail-panel">
