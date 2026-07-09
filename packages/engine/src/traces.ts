@@ -32,8 +32,19 @@ export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[]
   }
 
   if (nameSearch) {
-    conditions.push('(name LIKE ? OR trace_id IN (SELECT DISTINCT trace_id FROM spans WHERE name LIKE ?))');
-    params.push(`%${nameSearch}%`, `%${nameSearch}%`);
+    // Search trace ID, root span name, and any span's name, span ID, or attribute values.
+    conditions.push(`(
+      trace_id LIKE ? OR
+      name     LIKE ? OR
+      trace_id IN (
+        SELECT DISTINCT trace_id FROM spans
+        WHERE name       LIKE ?
+           OR span_id    LIKE ?
+           OR attributes LIKE ?
+      )
+    )`);
+    const like = `%${nameSearch}%`;
+    params.push(like, like, like, like, like);
   }
 
   // Attribute filter: restrict to traces containing at least one matching span.
