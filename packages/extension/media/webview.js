@@ -97,7 +97,10 @@
     tracesList.innerHTML = traces.map(t => `
       <div class="trace-row ${t.hasError ? 'row--error' : ''}" data-id="${esc(t.traceId)}">
         <span class="expand-icon" aria-hidden="true">${expandedTraces.has(t.traceId) ? '▾' : '▸'}</span>
-        <span class="cell cell--name" title="${esc(t.traceId)}">${esc(t.rootSpanName)}</span>
+        <span class="cell cell--name">
+          <span class="trace-name">${esc(t.rootSpanName)}</span>
+          <span class="trace-id">${esc(t.traceId)}</span>
+        </span>
         <span class="cell cell--service">${esc(t.serviceName)}</span>
         <span class="cell cell--ts">${fmtNano(t.startTimeUnixNano)}</span>
         <span class="cell cell--dur">${fmtMs(t.durationMs)}</span>
