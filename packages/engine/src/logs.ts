@@ -2,6 +2,7 @@ import type { QueryableDB, LogRecord } from '@otel-insights/types';
 
 export interface LogQueryOptions {
   filter?: string;
+  excludes?: string[];
   minSeverity?: number;
   limit?: number;
   sinceNano?: string;
@@ -9,7 +10,7 @@ export interface LogQueryOptions {
 }
 
 export function getLogs(db: QueryableDB, opts: LogQueryOptions = {}): LogRecord[] {
-  const { filter = '', minSeverity = 0, limit = 500, sinceNano, untilNano } = opts;
+  const { filter = '', excludes = [], minSeverity = 0, limit = 500, sinceNano, untilNano } = opts;
 
   // severity_number 0 = UNSPECIFIED (often emitted as "TRACE" by SDKs).
   // Treat minSeverity 1 (Trace+) identically to 0 so those logs are included.
@@ -21,9 +22,17 @@ export function getLogs(db: QueryableDB, opts: LogQueryOptions = {}): LogRecord[
   if (untilNano) { conditions.push('timestamp_unix_nano <= ?'); params.push(untilNano); }
 
   if (filter.trim()) {
-    conditions.push('(body LIKE ? OR service_name LIKE ? OR severity_text LIKE ?)');
+    conditions.push('(body LIKE ? OR service_name LIKE ? OR severity_text LIKE ? OR attributes LIKE ?)');
     const like = `%${filter.trim()}%`;
-    params.push(like, like, like);
+    params.push(like, like, like, like);
+  }
+
+  for (const excl of excludes) {
+    if (excl.trim()) {
+      conditions.push('(body NOT LIKE ? AND service_name NOT LIKE ? AND severity_text NOT LIKE ? AND attributes NOT LIKE ?)');
+      const like = `%${excl.trim()}%`;
+      params.push(like, like, like, like);
+    }
   }
 
   const rows = db.prepare(`

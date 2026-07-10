@@ -19,12 +19,13 @@
   const refreshBtn   = $('refresh-btn');
   const clearBtn     = $('clear-btn');
   const tracesList   = $('traces-list');
-  const logsList     = $('logs-list');
-  const logFilter    = /** @type {HTMLInputElement}  */ ($('log-filter'));
-  const logSeverity  = /** @type {HTMLSelectElement} */ ($('log-severity'));
-  const traceSearch  = /** @type {HTMLInputElement}  */ ($('trace-search'));
-  const traceService = /** @type {HTMLSelectElement} */ ($('trace-service'));
-  const traceErrBtn  = $('trace-errors-btn');
+  const logsList       = $('logs-list');
+  const logFilter      = /** @type {HTMLInputElement}  */ ($('log-filter'));
+  const logSeverity    = /** @type {HTMLSelectElement} */ ($('log-severity'));
+  const logFilterIcon  = $('log-filter-icon');
+  const traceSearch    = /** @type {HTMLInputElement}  */ ($('trace-search'));
+  const traceService   = /** @type {HTMLSelectElement} */ ($('trace-service'));
+  const traceErrBtn    = $('trace-errors-btn');
 
   let errorsOnly = false;
 
@@ -63,11 +64,54 @@
   }
 
   function fetchLogs() {
+    const raw = logFilter.value.trim();
+    const tokens = raw.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+
+    let filter    = '';
+    let sinceNano = '';
+    let untilNano = '';
+    /** @type {string[]} */
+    const excludes = [];
+    /** @type {string[]} */
+    const includes = [];
+
+    for (const tok of tokens) {
+      const lower = tok.toLowerCase();
+      if (lower.startsWith('after:')) {
+        const ts = parseTimestamp(tok.slice(6));
+        if (ts) { sinceNano = ts; }
+      } else if (lower.startsWith('before:')) {
+        const ts = parseTimestamp(tok.slice(7));
+        if (ts) { untilNano = ts; }
+      } else if (tok.startsWith('!') && tok.length > 1) {
+        excludes.push(tok.slice(1));
+      } else {
+        includes.push(tok);
+      }
+    }
+    filter = includes.join(' ');
+
+    // Show funnel icon when any advanced filter token is active
+    const hasAdvanced = excludes.length > 0 || sinceNano || untilNano;
+    logFilterIcon?.classList.toggle('active', hasAdvanced);
+
     vscode.postMessage({
       type:        'getLogs',
-      filter:      logFilter.value,
+      filter:      filter || undefined,
+      excludes:    excludes.length ? excludes : undefined,
+      sinceNano:   sinceNano || undefined,
+      untilNano:   untilNano || undefined,
       minSeverity: Number(logSeverity.value),
     });
+  }
+
+  /** @param {string} s @returns {string} nanoseconds string or '' */
+  function parseTimestamp(s) {
+    try {
+      const ms = Date.parse(s);
+      if (isNaN(ms)) { return ''; }
+      return String(BigInt(ms) * 1_000_000n);
+    } catch { return ''; }
   }
 
   refreshBtn?.addEventListener('click', loadCurrentTab);
@@ -541,7 +585,9 @@
   function fmtNano(nanos) {
     try {
       const ms = Number(BigInt(nanos) / 1_000_000n);
-      return new Date(ms).toISOString().replace('T', ' ').slice(0, 23);
+      const d = new Date(ms);
+      const pad = (/** @type {number} */ n, /** @type {number} */ w = 2) => String(n).padStart(w, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     } catch { return nanos; }
   }
 

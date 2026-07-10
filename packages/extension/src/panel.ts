@@ -80,7 +80,13 @@ export class OtelInsightsPanel {
         this.post({ type: 'metrics', data: getMetricsData(db) });
         break;
       case 'getLogs':
-        this.post({ type: 'logs', data: getLogs(db, { filter: msg.filter, minSeverity: msg.minSeverity }) });
+        this.post({ type: 'logs', data: getLogs(db, {
+          filter:      msg.filter,
+          excludes:    msg.excludes,
+          minSeverity: msg.minSeverity,
+          sinceNano:   msg.sinceNano,
+          untilNano:   msg.untilNano,
+        }) });
         break;
       case 'clearData': {
         const answer = await vscode.window.showWarningMessage(
@@ -202,7 +208,10 @@ export class OtelInsightsPanel {
   <!-- Logs tab -->
   <div id="logs-panel" class="panel" role="tabpanel">
     <div class="logs-toolbar">
-      <input  id="log-filter"   type="text"    placeholder="Filter by message, service…" />
+      <div class="log-filter-wrap">
+        <input id="log-filter" type="text" placeholder="Filter (e.g. text, !exclude, before:YYYY-MM-DDTHH:MM:SS)" />
+        <span class="log-filter-icon" title="Advanced filter active" id="log-filter-icon">⊘</span>
+      </div>
       <select id="log-severity">
           <option value="0">All</option>
           <option value="1">Trace</option>
@@ -212,6 +221,12 @@ export class OtelInsightsPanel {
           <option value="17">Error</option>
           <option value="21">Fatal</option>
         </select>
+    </div>
+    <div class="logs-header">
+      <span class="log-ts">Created</span>
+      <span class="log-level">Level</span>
+      <span class="log-svc">Service</span>
+      <span class="log-body-hdr">Details</span>
     </div>
     <div id="logs-list" class="list-container">
       <div class="empty-state">Loading logs…</div>

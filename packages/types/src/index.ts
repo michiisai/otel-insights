@@ -99,7 +99,7 @@ export type WebviewToExtension =
   | { type: 'getServices' }
   | { type: 'getSpans'; traceId: string }
   | { type: 'getMetrics' }
-  | { type: 'getLogs'; filter?: string; minSeverity?: number }
+  | { type: 'getLogs'; filter?: string; excludes?: string[]; sinceNano?: string; untilNano?: string; minSeverity?: number }
   | { type: 'clearData' };
 
 /** Messages sent from the extension host to the webview. */
