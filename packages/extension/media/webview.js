@@ -543,7 +543,7 @@
       const cls = rowClasses[i] ? ` class="${rowClasses[i]}"` : '';
       return `<tr${cls}>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`;
     }).join('');
-    return `<table class="data-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+    return `<div class="table-scroll"><table class="data-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table></div>`;
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────────

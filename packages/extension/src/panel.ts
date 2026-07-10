@@ -174,24 +174,26 @@ export class OtelInsightsPanel {
 
   <!-- Performance tab -->
   <div id="performance-panel" class="panel" role="tabpanel">
-    <div class="metrics-grid">
+    <div class="metrics-outer">
+
+      <div class="metrics-grid">
+        <section class="card">
+          <h3 class="card-title">📊 Summary</h3>
+          <div id="summary"></div>
+        </section>
+
+        <section class="card">
+          <h3 class="card-title">🐢 Slowest Operations</h3>
+          <div id="slowest-ops"></div>
+        </section>
+
+        <section class="card">
+          <h3 class="card-title">🪙 Token Usage</h3>
+          <div id="token-usage"></div>
+        </section>
+      </div>
 
       <section class="card">
-        <h3 class="card-title">📊 Summary</h3>
-        <div id="summary"></div>
-      </section>
-
-      <section class="card">
-        <h3 class="card-title">🐢 Slowest Operations</h3>
-        <div id="slowest-ops"></div>
-      </section>
-
-      <section class="card">
-        <h3 class="card-title">🪙 Token Usage</h3>
-        <div id="token-usage"></div>
-      </section>
-
-      <section class="card card--wide">
         <h3 class="card-title">🔧 Tool Calls</h3>
         <div id="tool-calls"></div>
       </section>
