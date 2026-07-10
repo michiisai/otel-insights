@@ -464,7 +464,12 @@
       ? `${Math.round(s.errorTraces / s.totalTraces * 100)}%`
       : '–';
 
-    const totalTokens = s.inputTokens + s.outputTokens + s.cachedTokens;
+    // Per OTel GenAI semconv, input_tokens already includes cache_read tokens.
+    // Total = input + output only; cached is a subset of input, not additive.
+    const totalTokens   = s.inputTokens + s.outputTokens;
+    const cacheHitPct   = s.inputTokens > 0
+      ? `${Math.round(s.cachedTokens / s.inputTokens * 100)}%`
+      : '–';
 
     el.innerHTML = `
       <div class="summary-section">
@@ -478,11 +483,12 @@
       </div>
       <div class="summary-section">
         <div class="summary-section-lbl">Tokens</div>
-        <div class="summary-row">
+        <div class="summary-row summary-row--wide">
           <div class="summary-item"><span class="summary-val">${fmtNum(s.inputTokens)}</span><span class="summary-lbl">Input</span></div>
           <div class="summary-item"><span class="summary-val">${fmtNum(s.outputTokens)}</span><span class="summary-lbl">Output</span></div>
-          <div class="summary-item"><span class="summary-val">${fmtNum(s.cachedTokens)}</span><span class="summary-lbl">Cached</span></div>
           <div class="summary-item"><span class="summary-val">${fmtNum(totalTokens)}</span><span class="summary-lbl">Total</span></div>
+          <div class="summary-item"><span class="summary-val">${fmtNum(s.cachedTokens)}</span><span class="summary-lbl">Cache Hits</span></div>
+          <div class="summary-item"><span class="summary-val">${cacheHitPct}</span><span class="summary-lbl">Cache Hit %</span></div>
         </div>
       </div>
     `;

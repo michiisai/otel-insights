@@ -552,7 +552,8 @@ body {
 .summary-section { display: flex; flex-direction: column; gap: 6px; }
 .summary-section + .summary-section { margin-top: 16px; }
 .summary-section-lbl { font-size: 11px; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.summary-row   { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+.summary-row           { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+.summary-row--wide     { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
 .summary-item  {
   display:         flex;
   flex-direction:  column;

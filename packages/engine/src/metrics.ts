@@ -95,26 +95,26 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
   const inputTokens    = Math.round(tokenRows.reduce((sum, r) => sum + Number(r['prompt_tokens']     ?? 0), 0));
   const outputTokens   = Math.round(tokenRows.reduce((sum, r) => sum + Number(r['completion_tokens'] ?? 0), 0));
 
-  // Cached tokens — covers OTel GenAI semconv, OpenAI nested details, and common llm.* variants
+  // Cache read tokens only (tokens served from cache = "cache hit").
+  // cache_creation tokens are NOT included — they are a write cost, not a hit.
   const cachedAndClause = spanWhere ? `${spanWhere} AND` : 'WHERE';
   const cachedRow = db.prepare(`
-    SELECT SUM(COALESCE(
-      CAST(json_extract(attributes, '$."gen_ai.usage.cache_read.input_tokens"')             AS REAL),
-      CAST(json_extract(attributes, '$."gen_ai.usage.cache_creation.input_tokens"')         AS REAL),
-      CAST(json_extract(attributes, '$."gen_ai.usage.cache_read_input_tokens"')             AS REAL),
-      CAST(json_extract(attributes, '$."gen_ai.usage.cached_tokens"')                       AS REAL),
-      CAST(json_extract(attributes, '$."llm.usage.cache_read_input_tokens"')                AS REAL),
-      CAST(json_extract(attributes, '$."llm.usage.cached_tokens"')                          AS REAL),
-      0
-    )) AS cached_tokens
+    SELECT
+      SUM(COALESCE(
+        CAST(json_extract(attributes, '$."gen_ai.usage.cache_read.input_tokens"') AS REAL),
+        CAST(json_extract(attributes, '$."gen_ai.usage.cache_read_input_tokens"') AS REAL),
+        CAST(json_extract(attributes, '$."gen_ai.usage.cached_tokens"')           AS REAL),
+        CAST(json_extract(attributes, '$."llm.usage.cache_read_input_tokens"')    AS REAL),
+        CAST(json_extract(attributes, '$."llm.usage.cached_tokens"')              AS REAL),
+        0
+      )) AS cached_tokens
     FROM spans
     ${cachedAndClause} (
-      json_extract(attributes, '$."gen_ai.usage.cache_read.input_tokens"')      IS NOT NULL
-      OR json_extract(attributes, '$."gen_ai.usage.cache_creation.input_tokens"') IS NOT NULL
-      OR json_extract(attributes, '$."gen_ai.usage.cache_read_input_tokens"')   IS NOT NULL
-      OR json_extract(attributes, '$."gen_ai.usage.cached_tokens"')             IS NOT NULL
-      OR json_extract(attributes, '$."llm.usage.cache_read_input_tokens"')      IS NOT NULL
-      OR json_extract(attributes, '$."llm.usage.cached_tokens"')                IS NOT NULL
+      json_extract(attributes, '$."gen_ai.usage.cache_read.input_tokens"') IS NOT NULL
+      OR json_extract(attributes, '$."gen_ai.usage.cache_read_input_tokens"') IS NOT NULL
+      OR json_extract(attributes, '$."gen_ai.usage.cached_tokens"')           IS NOT NULL
+      OR json_extract(attributes, '$."llm.usage.cache_read_input_tokens"')    IS NOT NULL
+      OR json_extract(attributes, '$."llm.usage.cached_tokens"')              IS NOT NULL
     )
   `).get(...spanParams);
   const cachedTokens = Math.round(Number(cachedRow?.['cached_tokens'] ?? 0));
