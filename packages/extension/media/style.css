@@ -512,26 +512,14 @@ body {
 .text-err { color: var(--err); }
 
 /* ── Performance tab ──────────────────────────────────────────────────── */
-.metrics-outer {
-  display:        flex;
-  flex-direction: column;
-  gap:            12px;
-}
-
 .metrics-grid {
   display:               grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap:                   12px;
   align-content:         start;
 }
 
-@media (max-width: 700px) {
-  .metrics-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 460px) {
+@media (max-width: 500px) {
   .metrics-grid {
     grid-template-columns: 1fr;
   }
@@ -549,9 +537,9 @@ body {
 }
 
 .card-title {
-  font-size:      12px;
-  font-weight:    600;
-  color:          var(--fg-muted);
+  font-size:      14px;
+  font-weight:    700;
+  color:          var(--fg);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-bottom:  1px solid var(--border);
