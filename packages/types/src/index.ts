@@ -55,6 +55,13 @@ export interface MetricsData {
     totalTraces: number;
     totalLogs: number;
     totalMetricPoints: number;
+    llmCalls: number;
+    toolCallsTotal: number;
+    inputTokens: number;
+    outputTokens: number;
+    cachedTokens: number;
+    errorTraces: number;
+    p95Ms: number;
   };
 }
 

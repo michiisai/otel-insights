@@ -14,6 +14,7 @@
   --warn-fg:    var(--vscode-editorWarning-foreground,      #cca700);
   --ok:         var(--vscode-testing-iconPassed,            #4ec9b0);
   --font:       var(--vscode-font-family,                   system-ui, sans-serif);
+  --font-ui:    var(--vscode-font-family,                    system-ui, sans-serif);
   --font-mono:  var(--vscode-editor-font-family,            'Cascadia Code', monospace);
   --font-size:  var(--vscode-font-size,                     13px);
 }
@@ -548,10 +549,23 @@ body {
 }
 
 /* ── Summary grid ─────────────────────────────────────────────────────── */
-.summary-row   { display: flex; gap: 16px; flex-wrap: wrap; }
-.summary-item  { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 60px; }
-.summary-val   { font-size: 22px; font-weight: 700; font-family: var(--font-mono); color: var(--fg); }
-.summary-lbl   { font-size: 11px; color: var(--fg-muted); }
+.summary-section { display: flex; flex-direction: column; gap: 6px; }
+.summary-section + .summary-section { margin-top: 16px; }
+.summary-section-lbl { font-size: 11px; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.summary-row   { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+.summary-item  {
+  display:         flex;
+  flex-direction:  column;
+  align-items:     flex-start;
+  gap:             2px;
+  padding:         10px 12px;
+  background:      var(--bg);
+  border:          1px solid var(--border);
+  border-radius:   6px;
+  min-width:       0;
+}
+.summary-val   { font-size: 20px; font-weight: 400; color: var(--fg); white-space: nowrap; }
+.summary-lbl   { font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
 
 /* ── Data tables ──────────────────────────────────────────────────────── */
 .table-scroll {

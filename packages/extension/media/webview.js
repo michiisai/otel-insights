@@ -451,12 +451,39 @@
   function renderSummary(/** @type {any} */ s) {
     const el = $('summary');
     if (!el) { return; }
+
+    const fmtNum = (/** @type {number} */ n) => n.toLocaleString();
+
+    const fmtMs = (/** @type {number} */ ms) =>
+      ms <= 0   ? '–'
+      : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s`
+      : `${Math.round(ms)}ms`;
+
+    const errClass  = s.errorTraces > 0 ? ' text-err' : '';
+    const errorRate = s.totalTraces > 0
+      ? `${Math.round(s.errorTraces / s.totalTraces * 100)}%`
+      : '–';
+
+    const totalTokens = s.inputTokens + s.outputTokens + s.cachedTokens;
+
     el.innerHTML = `
-      <div class="summary-row">
-        <div class="summary-item"><span class="summary-val">${s.totalTraces}</span><span class="summary-lbl">Traces</span></div>
-        <div class="summary-item"><span class="summary-val">${s.totalSpans}</span><span class="summary-lbl">Spans</span></div>
-        <div class="summary-item"><span class="summary-val">${s.totalLogs}</span><span class="summary-lbl">Logs</span></div>
-        <div class="summary-item"><span class="summary-val">${s.totalMetricPoints}</span><span class="summary-lbl">Metric pts</span></div>
+      <div class="summary-section">
+        <div class="summary-section-lbl">Activity</div>
+        <div class="summary-row">
+          <div class="summary-item"><span class="summary-val">${s.llmCalls}</span><span class="summary-lbl">LLM Calls</span></div>
+          <div class="summary-item"><span class="summary-val">${s.toolCallsTotal}</span><span class="summary-lbl">Tool Calls</span></div>
+          <div class="summary-item"><span class="summary-val${errClass}">${errorRate}</span><span class="summary-lbl">Error Rate</span></div>
+          <div class="summary-item"><span class="summary-val">${fmtMs(s.p95Ms)}</span><span class="summary-lbl">P95 Latency</span></div>
+        </div>
+      </div>
+      <div class="summary-section">
+        <div class="summary-section-lbl">Tokens</div>
+        <div class="summary-row">
+          <div class="summary-item"><span class="summary-val">${fmtNum(s.inputTokens)}</span><span class="summary-lbl">Input</span></div>
+          <div class="summary-item"><span class="summary-val">${fmtNum(s.outputTokens)}</span><span class="summary-lbl">Output</span></div>
+          <div class="summary-item"><span class="summary-val">${fmtNum(s.cachedTokens)}</span><span class="summary-lbl">Cached</span></div>
+          <div class="summary-item"><span class="summary-val">${fmtNum(totalTokens)}</span><span class="summary-lbl">Total</span></div>
+        </div>
       </div>
     `;
   }

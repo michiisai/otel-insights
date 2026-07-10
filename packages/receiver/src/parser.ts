@@ -8,14 +8,20 @@ type OtlpValue = {
   doubleValue?: number;
   boolValue?: boolean;
   arrayValue?: { values: OtlpValue[] };
+  kvlistValue?: { values: Array<{ key: string; value: OtlpValue }> };
 };
 
 function flattenAttr(v: OtlpValue): unknown {
   if (v.stringValue !== undefined) { return v.stringValue; }
-  if (v.intValue !== undefined) { return Number(v.intValue); }
-  if (v.doubleValue !== undefined) { return v.doubleValue; }
-  if (v.boolValue !== undefined) { return v.boolValue; }
-  if (v.arrayValue) { return v.arrayValue.values.map(flattenAttr); }
+  if (v.intValue     !== undefined) { return Number(v.intValue); }
+  if (v.doubleValue  !== undefined) { return v.doubleValue; }
+  if (v.boolValue    !== undefined) { return v.boolValue; }
+  if (v.arrayValue)  { return v.arrayValue.values.map(flattenAttr); }
+  if (v.kvlistValue) {
+    const obj: Record<string, unknown> = {};
+    for (const kv of v.kvlistValue.values) { obj[kv.key] = flattenAttr(kv.value); }
+    return obj;
+  }
   return null;
 }
 

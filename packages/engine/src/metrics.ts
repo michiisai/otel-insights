@@ -89,6 +89,44 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
     LIMIT 25
   `).all(...spanParams);
 
+  // Derive aggregate stats from already-fetched rows
+  const llmCalls       = tokenRows.reduce((sum, r) => sum + Number(r['call_count']        ?? 0), 0);
+  const toolCallsTotal = toolRows.reduce((sum, r)  => sum + Number(r['count']             ?? 0), 0);
+  const inputTokens    = Math.round(tokenRows.reduce((sum, r) => sum + Number(r['prompt_tokens']     ?? 0), 0));
+  const outputTokens   = Math.round(tokenRows.reduce((sum, r) => sum + Number(r['completion_tokens'] ?? 0), 0));
+
+  // Cached tokens — covers OTel GenAI semconv, OpenAI nested details, and common llm.* variants
+  const cachedAndClause = spanWhere ? `${spanWhere} AND` : 'WHERE';
+  const cachedRow = db.prepare(`
+    SELECT SUM(COALESCE(
+      CAST(json_extract(attributes, '$."gen_ai.usage.cache_read.input_tokens"')             AS REAL),
+      CAST(json_extract(attributes, '$."gen_ai.usage.cache_creation.input_tokens"')         AS REAL),
+      CAST(json_extract(attributes, '$."gen_ai.usage.cache_read_input_tokens"')             AS REAL),
+      CAST(json_extract(attributes, '$."gen_ai.usage.cached_tokens"')                       AS REAL),
+      CAST(json_extract(attributes, '$."llm.usage.cache_read_input_tokens"')                AS REAL),
+      CAST(json_extract(attributes, '$."llm.usage.cached_tokens"')                          AS REAL),
+      0
+    )) AS cached_tokens
+    FROM spans
+    ${cachedAndClause} (
+      json_extract(attributes, '$."gen_ai.usage.cache_read.input_tokens"')      IS NOT NULL
+      OR json_extract(attributes, '$."gen_ai.usage.cache_creation.input_tokens"') IS NOT NULL
+      OR json_extract(attributes, '$."gen_ai.usage.cache_read_input_tokens"')   IS NOT NULL
+      OR json_extract(attributes, '$."gen_ai.usage.cached_tokens"')             IS NOT NULL
+      OR json_extract(attributes, '$."llm.usage.cache_read_input_tokens"')      IS NOT NULL
+      OR json_extract(attributes, '$."llm.usage.cached_tokens"')                IS NOT NULL
+    )
+  `).get(...spanParams);
+  const cachedTokens = Math.round(Number(cachedRow?.['cached_tokens'] ?? 0));
+
+  // P95 latency from root spans only
+  const rootDurRows = db.prepare(`
+    SELECT duration_ms FROM spans
+    ${spanWhere ? `${spanWhere} AND` : 'WHERE'} (parent_span_id IS NULL OR parent_span_id = '')
+    ORDER BY duration_ms ASC
+  `).all(...spanParams);
+  const p95Ms = percentile(rootDurRows.map(r => Number(r['duration_ms'] ?? 0)), 0.95);
+
   // Counts for spans use start_time_unix_nano; logs/metrics use timestamp_unix_nano
   const logParts: string[] = [];
   const logParams: unknown[] = [];
@@ -96,13 +134,15 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
   if (untilNano) { logParts.push('timestamp_unix_nano <= ?'); logParams.push(untilNano); }
   const logWhere = logParts.length ? `WHERE ${logParts.join(' AND ')}` : '';
 
-  const summaryParams: unknown[] = [...spanParams, ...spanParams, ...logParams, ...logParams];
+  const summaryParams: unknown[] = [...spanParams, ...spanParams, ...logParams, ...logParams, ...spanParams];
+  const errorWhere = spanWhere ? `${spanWhere} AND status_code = 2` : `WHERE status_code = 2`;
   const summary = db.prepare(`
     SELECT
-      (SELECT COUNT(*)                 FROM spans         ${spanWhere}) AS total_spans,
-      (SELECT COUNT(DISTINCT trace_id) FROM spans         ${spanWhere}) AS total_traces,
-      (SELECT COUNT(*)                 FROM logs          ${logWhere})  AS total_logs,
-      (SELECT COUNT(*)                 FROM metric_points ${logWhere})  AS total_metric_points
+      (SELECT COUNT(*)                 FROM spans         ${spanWhere})  AS total_spans,
+      (SELECT COUNT(DISTINCT trace_id) FROM spans         ${spanWhere})  AS total_traces,
+      (SELECT COUNT(*)                 FROM logs          ${logWhere})   AS total_logs,
+      (SELECT COUNT(*)                 FROM metric_points ${logWhere})   AS total_metric_points,
+      (SELECT COUNT(DISTINCT trace_id) FROM spans         ${errorWhere}) AS error_traces
   `).get(...summaryParams);
 
   return {
@@ -139,8 +179,21 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
       totalTraces:       Number(summary?.['total_traces']        ?? 0),
       totalLogs:         Number(summary?.['total_logs']          ?? 0),
       totalMetricPoints: Number(summary?.['total_metric_points'] ?? 0),
+      llmCalls,
+      toolCallsTotal,
+      inputTokens,
+      outputTokens,
+      cachedTokens,
+      errorTraces:       Number(summary?.['error_traces']        ?? 0),
+      p95Ms,
     },
   };
+}
+
+function percentile(sorted: number[], p: number): number {
+  if (!sorted.length) { return 0; }
+  const idx = Math.floor(sorted.length * p);
+  return sorted[Math.min(idx, sorted.length - 1)] ?? 0;
 }
 
 function round2(n: number): number { return Math.round(n * 100) / 100; }
