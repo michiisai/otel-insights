@@ -267,11 +267,25 @@
   });
 
   // ── Status ────────────────────────────────────────────────────────────────────
+  let _currentPort = null;
+
   function renderStatus(/** @type {{connected:boolean,port:number}} */ s) {
     if (!statusBadge) { return; }
+    _currentPort = s.connected ? s.port : null;
     statusBadge.textContent = s.connected ? `● :${s.port}` : '● offline';
-    statusBadge.className   = `badge ${s.connected ? 'badge--ok' : 'badge--err'}`;
+    statusBadge.className   = `badge ${s.connected ? 'badge--ok badge--clickable' : 'badge--err'}`;
+    statusBadge.title       = s.connected ? `Click to copy http://127.0.0.1:${s.port}` : '';
   }
+
+  statusBadge && statusBadge.addEventListener('click', () => {
+    if (!_currentPort) { return; }
+    const endpoint = `http://127.0.0.1:${_currentPort}`;
+    navigator.clipboard.writeText(endpoint).then(() => {
+      const prev = statusBadge.textContent;
+      statusBadge.textContent = '✓ Copied!';
+      setTimeout(() => { statusBadge.textContent = prev; }, 1500);
+    });
+  });
 
   // ── Services dropdown ────────────────────────────────────────────────────────
   function renderServices(/** @type {string[]} */ services) {

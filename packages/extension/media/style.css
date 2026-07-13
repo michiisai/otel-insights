@@ -83,6 +83,8 @@ body {
 }
 .badge--ok  { color: var(--ok);  border-color: var(--ok); }
 .badge--err { color: var(--err); border-color: var(--err); }
+.badge--clickable { cursor: pointer; }
+.badge--clickable:hover { opacity: 0.8; }
 
 .icon-btn {
   background:    transparent;
