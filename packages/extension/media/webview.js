@@ -11,6 +11,10 @@
   let activeTab = 'traces';
   /** @type {Set<string>} */
   const expandedTraces = new Set();
+  /** @type {Set<string>} */
+  const selectedTraceIds = new Set();
+  /** @type {Map<string, any>} - key: spanId, value: span data */
+  const selectedSpans = new Map();
 
   // ── Elements ─────────────────────────────────────────────────────────────────
   const $ = (/** @type {string} */ id) => document.getElementById(id);
@@ -277,6 +281,13 @@
       services.map(s => `<option value="${esc(s)}"${s === current ? ' selected' : ''}>${esc(s)}</option>`).join('');
   }
 
+  // ── Chat selection sync ──────────────────────────────────────────────────────
+  function syncAllToChat() {
+    const traces = [...selectedTraceIds].map(id => traceDataMap.get(id)).filter(Boolean);
+    const spans  = [...selectedSpans.values()];
+    vscode.postMessage({ type: 'addItemsToChat', traces, spans });
+  }
+
   // ── Traces ────────────────────────────────────────────────────────────────────
   function renderTraces(/** @type {any[]} */ traces) {
     if (!tracesList) { return; }
@@ -286,8 +297,11 @@
     }
 
     traceDataMap = new Map(traces.map(t => [t.traceId, t]));
+    // Re-render clears DOM buttons, so sync selectedTraceIds to only known traces
+    for (const id of selectedTraceIds) { if (!traceDataMap.has(id)) { selectedTraceIds.delete(id); } }
     tracesList.innerHTML = traces.map(t => {
-      const isOpen = expandedTraces.has(t.traceId);
+      const isOpen     = expandedTraces.has(t.traceId);
+      const isSelected = selectedTraceIds.has(t.traceId);
       return `
         <div class="trace-row ${t.hasError ? 'row--error' : ''} ${isOpen ? '' : 'collapsed'}" data-id="${esc(t.traceId)}">
           <span class="expand-icon" aria-hidden="true">${isOpen ? '▾' : '▸'}</span>
@@ -300,7 +314,7 @@
           <span class="cell cell--dur">${fmtMs(t.durationMs)}</span>
           <span class="cell cell--spans">${t.spanCount} span${t.spanCount !== 1 ? 's' : ''}</span>
           <span class="pill pill--err${t.hasError ? '' : ' pill--hidden'}" aria-hidden="${t.hasError ? 'false' : 'true'}">ERR</span>
-          <button class="add-to-chat-btn" title="Add trace to chat" tabindex="-1">+ chat</button>
+          <button class="add-to-chat-btn${isSelected ? ' add-to-chat-btn--selected' : ''}" title="Add trace to chat" tabindex="-1">${isSelected ? '✓ added' : '+ chat'}</button>
         </div>
         <div class="waterfall-container" id="sc-${esc(t.traceId)}"
              style="display:${isOpen ? 'block' : 'none'}">
@@ -337,10 +351,17 @@
         e.stopPropagation();
         const row = /** @type {HTMLElement} */ (/** @type {HTMLElement} */ (btn).closest('.trace-row'));
         const id  = row?.dataset?.id;
-        if (id) {
-          const data = traceDataMap.get(id);
-          if (data) { vscode.postMessage({ type: 'addToChat', kind: 'trace', data }); }
+        if (!id) { return; }
+        if (selectedTraceIds.has(id)) {
+          selectedTraceIds.delete(id);
+          btn.textContent = '+ chat';
+          btn.classList.remove('add-to-chat-btn--selected');
+        } else {
+          selectedTraceIds.add(id);
+          btn.textContent = '✓ added';
+          btn.classList.add('add-to-chat-btn--selected');
         }
+        syncAllToChat();
       });
     });
 
@@ -479,10 +500,11 @@
     const panel = $('span-detail-panel');
     if (!panel) { return; }
     currentSpanNode = node;
+    const isSelected = selectedSpans.has(node.spanId);
     panel.innerHTML = `
       <div class="span-detail-panel-header">
         <span>Span Details</span>
-        <button class="add-to-chat-btn add-to-chat-btn--visible" title="Add span to chat">+ chat</button>
+        <button class="add-to-chat-btn add-to-chat-btn--visible${isSelected ? ' add-to-chat-btn--selected' : ''}" title="Add span to chat">${isSelected ? '✓ added' : '+ chat'}</button>
       </div>
       ${spanDetailHtml(node)}
     `;
@@ -491,10 +513,18 @@
   // Add-to-chat button in span detail panel
   $('span-detail-panel')?.addEventListener('click', e => {
     if (/** @type {HTMLElement} */ (e.target)?.closest('.add-to-chat-btn')) {
-      if (currentSpanNode) {
+      if (!currentSpanNode) { return; }
+      const spanId = currentSpanNode.spanId;
+      const btn = /** @type {HTMLElement} */ (/** @type {HTMLElement} */ (e.target).closest('.add-to-chat-btn'));
+      if (selectedSpans.has(spanId)) {
+        selectedSpans.delete(spanId);
+        if (btn) { btn.textContent = '+ chat'; btn.classList.remove('add-to-chat-btn--selected'); }
+      } else {
         const { children: _c, ...spanData } = currentSpanNode;
-        vscode.postMessage({ type: 'addToChat', kind: 'span', data: spanData });
+        selectedSpans.set(spanId, spanData);
+        if (btn) { btn.textContent = '✓ added'; btn.classList.add('add-to-chat-btn--selected'); }
       }
+      syncAllToChat();
       return;
     }
   });

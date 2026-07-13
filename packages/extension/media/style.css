@@ -465,19 +465,20 @@ body {
   cursor:         pointer;
   font-family:    var(--font);
   font-size:      10px;
-  padding:        1px 4px;
-  width:          42px;
+  padding:        1px 5px;
+  min-width:      48px;
   flex-shrink:    0;
   margin-left:    0;
   white-space:    nowrap;
   user-select:    none;
   visibility:     hidden;
   transition:     color 0.1s, border-color 0.1s;
-  line-height:    1.2;
+  line-height:    1.3;
   box-sizing:     border-box;
 }
 .trace-row:hover .add-to-chat-btn { visibility: visible; }
 .add-to-chat-btn--visible          { visibility: visible !important; }
+.add-to-chat-btn--selected         { visibility: visible !important; color: var(--ok); border-color: var(--ok); }
 .add-to-chat-btn:hover             { color: var(--accent); border-color: var(--accent); }
 
 .attr-chevron {

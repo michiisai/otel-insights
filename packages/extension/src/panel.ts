@@ -115,6 +115,21 @@ export class OtelInsightsPanel {
         }
         break;
       }
+      case 'addItemsToChat': {
+        const formatted = formatItemsForChat(msg.traces, msg.spans);
+        try {
+          await vscode.commands.executeCommand('workbench.action.chat.open', {
+            query: formatted || ' ',
+            isPartialQuery: true,
+          });
+        } catch {
+          if (formatted) {
+            await vscode.env.clipboard.writeText(formatted);
+            vscode.window.showInformationMessage('Copied to clipboard — paste into chat');
+          }
+        }
+        break;
+      }
     }
   }
 
@@ -279,6 +294,20 @@ export class OtelInsightsPanel {
 
 function formatTraceForChat(data: Record<string, unknown>): string {
   return `#otelSpans Look at trace \`${data.traceId}\``;
+}
+
+function formatItemsForChat(traces: Record<string, unknown>[], spans: Record<string, unknown>[]): string {
+  const parts: string[] = [];
+  if (traces.length) {
+    const ids = traces.map(d => `\`${d.traceId}\``).join(', ');
+    parts.push(`traces ${ids}`);
+  }
+  if (spans.length) {
+    const ids = spans.map(d => `\`${d.spanId}\` in trace \`${d.traceId}\``).join(', ');
+    parts.push(`spans ${ids}`);
+  }
+  if (!parts.length) { return ''; }
+  return `#otelSpans Look at ${parts.join(' and ')}`;
 }
 
 function formatSpanForChat(data: Record<string, unknown>): string {
