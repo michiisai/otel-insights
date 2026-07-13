@@ -31,11 +31,7 @@ ALWAYS call `otel-insights_listTraces` when the user wants to browse, list, or f
 
 ALWAYS call `otel-insights_getTrace` when the user wants to inspect a specific trace by ID, understand what happened in a run, or drill into spans — for any trace (not just errors).
 
-## Prerequisites
-
-- The **OTel Insights** VS Code extension must be installed and active (status bar shows `● OTel :4318`).
-- Your application must be exporting OTLP/HTTP telemetry to `http://127.0.0.1:4318`.
-
+1
 ## Available Tools
 
 | Tool | Purpose | Key inputs |

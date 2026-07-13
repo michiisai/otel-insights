@@ -15,11 +15,12 @@
   // ── Elements ─────────────────────────────────────────────────────────────────
   const $ = (/** @type {string} */ id) => document.getElementById(id);
 
-  const statusBadge  = $('status-badge');
-  const refreshBtn   = $('refresh-btn');
-  const clearBtn     = $('clear-btn');
-  const tracesList   = $('traces-list');
+  const statusBadge    = $('status-badge');
+  const refreshBtn     = $('refresh-btn');
+  const clearBtn       = $('clear-btn');
+  const tracesList     = $('traces-list');
   const logsList       = $('logs-list');
+  const logDetailPanel = $('log-detail-panel');
   const logFilter      = /** @type {HTMLInputElement}  */ ($('log-filter'));
   const logSeverity    = /** @type {HTMLSelectElement} */ ($('log-severity'));
   const logFilterIcon  = $('log-filter-icon');
@@ -28,6 +29,15 @@
   const traceErrBtn    = $('trace-errors-btn');
 
   let errorsOnly = false;
+  /** @type {any[]} */
+  let currentLogs = [];
+  /** Pending deeplink: after navigating to traces, auto-expand this trace and highlight this span */
+  /** @type {{ traceId: string, spanId: string | null } | null} */
+  let pendingDeeplink = null;
+  /** @type {Map<string, any>} */
+  let traceDataMap = new Map();
+  /** @type {any} */
+  let currentSpanNode = null;
 
   // ── Tab switching ─────────────────────────────────────────────────────────────
   document.querySelectorAll('.tab').forEach(tab => {
@@ -52,6 +62,29 @@
     if (activeTab === 'traces')           { fetchTraces(); }
     else if (activeTab === 'performance') { vscode.postMessage({ type: 'getMetrics' }); }
     else if (activeTab === 'logs')        { fetchLogs(); }
+  }
+
+  /** Switch to Traces tab, filter to the given trace ID, and optionally highlight a span */
+  function navigateToTrace(/** @type {string} */ traceId, /** @type {string|null} */ spanId = null) {
+    // Activate the traces tab button and panel
+    document.querySelectorAll('.tab').forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
+    });
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+
+    const tracesTab   = document.querySelector('.tab[data-tab="traces"]');
+    const tracesPanel = $('traces-panel');
+    if (tracesTab)  { tracesTab.classList.add('active'); tracesTab.setAttribute('aria-selected', 'true'); }
+    if (tracesPanel) { tracesPanel.classList.add('active'); }
+    activeTab = 'traces';
+
+    // Set deeplink state so renderTraces/renderSpans can auto-expand + highlight
+    pendingDeeplink = { traceId, spanId };
+
+    // Pre-fill the trace search with the trace ID and fetch
+    if (traceSearch) { traceSearch.value = traceId; }
+    fetchTraces();
   }
 
   function fetchTraces() {
@@ -91,7 +124,6 @@
     }
     filter = includes.join(' ');
 
-    // Show funnel icon when any advanced filter token is active
     const hasAdvanced = excludes.length > 0 || sinceNano || untilNano;
     logFilterIcon?.classList.toggle('active', hasAdvanced);
 
@@ -176,7 +208,47 @@
     });
   }());
 
-  // ── Message handler ───────────────────────────────────────────────────────────
+  // ── Logs panel resize ─────────────────────────────────────────────────────────
+  (function initLogsResizer() {
+    const divider    = $('logs-divider');
+    const rightPanel = $('log-detail-panel');
+    const split      = divider?.parentElement;
+    if (!divider || !rightPanel || !split) { return; }
+
+    const divEl   = /** @type {HTMLElement} */ (divider);
+    const rightEl = /** @type {HTMLElement} */ (rightPanel);
+    const splitEl = /** @type {HTMLElement} */ (split);
+
+    let startX = 0;
+    let startW = 0;
+
+    divEl.addEventListener('mousedown', e => {
+      startX = e.clientX;
+      startW = rightEl.getBoundingClientRect().width;
+      divEl.classList.add('dragging');
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+
+      function onMove(/** @type {MouseEvent} */ ev) {
+        const delta  = startX - ev.clientX;
+        const splitW = splitEl.getBoundingClientRect().width;
+        const newW   = Math.min(Math.max(startW + delta, splitW * 0.2), splitW * 0.5);
+        rightEl.style.width = `${newW}px`;
+      }
+
+      function onUp() {
+        divEl.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      e.preventDefault();
+    });
+  }());
   window.addEventListener('message', event => {
     const msg = event.data;
     switch (msg.type) {
@@ -213,6 +285,7 @@
       return;
     }
 
+    traceDataMap = new Map(traces.map(t => [t.traceId, t]));
     tracesList.innerHTML = traces.map(t => {
       const isOpen = expandedTraces.has(t.traceId);
       return `
@@ -227,6 +300,7 @@
           <span class="cell cell--dur">${fmtMs(t.durationMs)}</span>
           <span class="cell cell--spans">${t.spanCount} span${t.spanCount !== 1 ? 's' : ''}</span>
           <span class="pill pill--err${t.hasError ? '' : ' pill--hidden'}" aria-hidden="${t.hasError ? 'false' : 'true'}">ERR</span>
+          <button class="add-to-chat-btn" title="Add trace to chat" tabindex="-1">+ chat</button>
         </div>
         <div class="waterfall-container" id="sc-${esc(t.traceId)}"
              style="display:${isOpen ? 'block' : 'none'}">
@@ -256,6 +330,35 @@
         }
       });
     });
+
+    // Add-to-chat buttons: stop propagation so row expand/collapse doesn't fire
+    tracesList.querySelectorAll('.add-to-chat-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const row = /** @type {HTMLElement} */ (/** @type {HTMLElement} */ (btn).closest('.trace-row'));
+        const id  = row?.dataset?.id;
+        if (id) {
+          const data = traceDataMap.get(id);
+          if (data) { vscode.postMessage({ type: 'addToChat', kind: 'trace', data }); }
+        }
+      });
+    });
+
+    // If a deeplink is pending, auto-expand the target trace
+    if (pendingDeeplink) {
+      const { traceId: dlTraceId } = pendingDeeplink;
+      const targetRow = tracesList.querySelector(`.trace-row[data-id="${dlTraceId}"]`);
+      const container = $(`sc-${dlTraceId}`);
+      const icon      = targetRow?.querySelector('.expand-icon');
+      if (targetRow && container) {
+        expandedTraces.add(dlTraceId);
+        container.style.display = 'block';
+        targetRow.classList.remove('collapsed');
+        if (icon) { icon.textContent = '▾'; }
+        targetRow.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        vscode.postMessage({ type: 'getSpans', traceId: dlTraceId });
+      }
+    }
   }
 
   // ── Span waterfall ────────────────────────────────────────────────────────────
@@ -339,6 +442,24 @@
         showSpanDetail(node);
       });
     });
+
+    // If a deeplink is pending for this trace, highlight + scroll to the target span
+    if (pendingDeeplink && pendingDeeplink.traceId === traceId && pendingDeeplink.spanId) {
+      const targetSpanId = pendingDeeplink.spanId;
+      pendingDeeplink = null; // consume
+      const targetRow = /** @type {HTMLElement|null} */ (
+        container.querySelector(`.waterfall-row[data-span-id="${targetSpanId}"]`)
+      );
+      if (targetRow) {
+        document.querySelectorAll('.waterfall-row.selected').forEach(r => r.classList.remove('selected'));
+        targetRow.classList.add('selected');
+        targetRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        const node = byId[targetSpanId];
+        if (node) { showSpanDetail(node); }
+      }
+    } else if (pendingDeeplink && pendingDeeplink.traceId === traceId) {
+      pendingDeeplink = null; // consume (trace-only deeplink, no span to highlight)
+    }
   }
 
   /** @param {number} kind @returns {string} */
@@ -357,11 +478,26 @@
   function showSpanDetail(node) {
     const panel = $('span-detail-panel');
     if (!panel) { return; }
+    currentSpanNode = node;
     panel.innerHTML = `
-      <div class="span-detail-panel-header">Span Details</div>
+      <div class="span-detail-panel-header">
+        <span>Span Details</span>
+        <button class="add-to-chat-btn add-to-chat-btn--visible" title="Add span to chat">+ chat</button>
+      </div>
       ${spanDetailHtml(node)}
     `;
   }
+
+  // Add-to-chat button in span detail panel
+  $('span-detail-panel')?.addEventListener('click', e => {
+    if (/** @type {HTMLElement} */ (e.target)?.closest('.add-to-chat-btn')) {
+      if (currentSpanNode) {
+        const { children: _c, ...spanData } = currentSpanNode;
+        vscode.postMessage({ type: 'addToChat', kind: 'span', data: spanData });
+      }
+      return;
+    }
+  });
 
   // Toggle long attribute values in the right panel (delegated)
   $('span-detail-panel')?.addEventListener('click', e => {
@@ -541,16 +677,17 @@
   // ── Logs ──────────────────────────────────────────────────────────────────────
   function renderLogs(/** @type {any[]} */ logs) {
     if (!logsList) { return; }
+    currentLogs = logs;
     if (!logs.length) {
       logsList.innerHTML = '<div class="empty-state">No logs match the current filter.</div>';
       return;
     }
-    logsList.innerHTML = logs.map(log => {
+    logsList.innerHTML = logs.map((log, i) => {
       const levelText  = (log.severityText || severityLabel(log.severityNumber)).toUpperCase();
       const levelClass = severityClass(log.severityNumber);
       const ts         = fmtNano(log.timestampUnixNano);
       return `
-        <div class="log-row log-row--${levelClass}">
+        <div class="log-row log-row--${levelClass}" data-log-idx="${i}" style="cursor:pointer">
           <span class="log-ts">${ts}</span>
           <span class="log-level log-level--${levelClass}">${levelText}</span>
           <span class="log-svc">${esc(log.serviceName)}</span>
@@ -558,6 +695,98 @@
         </div>
       `;
     }).join('');
+  }
+
+  // Log row click → show detail panel
+  logsList?.addEventListener('click', e => {
+    const row = /** @type {HTMLElement} */ (e.target)?.closest('[data-log-idx]');
+    if (!row || !logDetailPanel) { return; }
+    const idx = parseInt(/** @type {HTMLElement} */ (row).dataset['logIdx'] ?? '-1', 10);
+    const log = currentLogs[idx];
+    if (!log) { return; }
+
+    // Highlight selected row
+    logsList.querySelectorAll('.log-row').forEach(r => r.classList.remove('log-row--selected'));
+    row.classList.add('log-row--selected');
+
+    logDetailPanel.innerHTML = `
+      <div class="span-detail-panel-header">Log Details</div>
+      ${logDetailHtml(log)}
+    `;
+  });
+
+  // Toggle long attribute values in log detail panel (delegated)
+  logDetailPanel?.addEventListener('click', e => {
+    const target = /** @type {HTMLElement} */ (e.target);
+
+    // Trace/span deeplink
+    const deeplink = target?.closest('.trace-deeplink');
+    if (deeplink) {
+      const traceId = /** @type {HTMLElement} */ (deeplink).dataset['traceid'];
+      const spanId  = /** @type {HTMLElement} */ (deeplink).dataset['spanid'] ?? null;
+      if (traceId) { navigateToTrace(traceId, spanId); }
+      return;
+    }
+
+    // Collapsible long attribute
+    const row = target?.closest('.attr-row-long');
+    if (!row) { return; }
+    const textEl  = row.querySelector('.attr-val-text');
+    const chevron = row.querySelector('.attr-chevron');
+    if (!textEl) { return; }
+    const collapsed = textEl.classList.toggle('collapsed');
+    if (chevron) { chevron.textContent = collapsed ? '▶' : '▾'; }
+  });
+
+  /** @param {any} log @returns {string} */
+  function logDetailHtml(log) {
+    const levelText  = (log.severityText || severityLabel(log.severityNumber)).toUpperCase();
+    const levelClass = severityClass(log.severityNumber);
+
+    const metaHtml = [
+      ['Timestamp', `<span class="mono">${fmtNano(log.timestampUnixNano)}</span>`],
+      ['Severity',  `<span class="log-level log-level--${levelClass}">${levelText}</span> <span class="text-muted">(${log.severityNumber})</span>`],
+      ['Service',   esc(log.serviceName)],
+      ...(log.traceId  ? [['Trace ID',  `<button class="trace-deeplink" data-traceid="${esc(log.traceId)}" title="Jump to trace">${esc(log.traceId)} ↗</button>`]]  : []),
+      ...(log.spanId   ? [['Span ID',   log.traceId
+        ? `<button class="trace-deeplink" data-traceid="${esc(log.traceId)}" data-spanid="${esc(log.spanId)}" title="Jump to span">${esc(log.spanId)} ↗</button>`
+        : `<span class="mono selectable">${esc(log.spanId)}</span>`]]  : []),
+    ].map(([k, v]) => `<div class="meta-key">${k}</div><div class="meta-val">${v}</div>`).join('');
+
+    const bodyHtml = `
+      <div class="attrs-section">
+        <div class="attrs-title">Message</div>
+        <pre class="log-detail-body">${esc(log.body)}</pre>
+      </div>`;
+
+    const attrEntries = Object.entries(log.attributes ?? {});
+    const LONG_THRESHOLD = 120;
+    const attrsHtml = attrEntries.length > 0
+      ? `<div class="attrs-section">
+           <div class="attrs-title">Attributes (${attrEntries.length})</div>
+           <table class="attrs-table">
+             ${attrEntries.map(([k, v]) => {
+               const text = fmtAttr(v);
+               const isLong = text.length > LONG_THRESHOLD;
+               const keyCell = isLong
+                 ? `<td class="attr-key"><span class="attr-chevron">▶</span>${esc(k)}</td>`
+                 : `<td class="attr-key">${esc(k)}</td>`;
+               const valCell = isLong
+                 ? `<td class="attr-val"><span class="attr-val-text collapsed">${esc(text)}</span></td>`
+                 : `<td class="attr-val"><span class="attr-val-text">${esc(text)}</span></td>`;
+               return `<tr class="${isLong ? 'attr-row-long' : ''}">${keyCell}${valCell}</tr>`;
+             }).join('')}
+           </table>
+         </div>`
+      : '<div class="attrs-empty">No attributes</div>';
+
+    return `
+      <div class="log-detail-content">
+        <div class="span-meta-grid">${metaHtml}</div>
+        ${bodyHtml}
+        ${attrsHtml}
+      </div>
+    `;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────

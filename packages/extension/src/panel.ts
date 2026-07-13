@@ -100,6 +100,21 @@ export class OtelInsightsPanel {
         }
         break;
       }
+      case 'addToChat': {
+        const formatted = msg.kind === 'trace'
+          ? formatTraceForChat(msg.data)
+          : formatSpanForChat(msg.data);
+        try {
+          await vscode.commands.executeCommand('workbench.action.chat.open', {
+            query: formatted,
+            isPartialQuery: true,
+          });
+        } catch {
+          await vscode.env.clipboard.writeText(formatted);
+          vscode.window.showInformationMessage('Copied to clipboard — paste into chat');
+        }
+        break;
+      }
     }
   }
 
@@ -222,14 +237,29 @@ export class OtelInsightsPanel {
           <option value="21">Fatal</option>
         </select>
     </div>
-    <div class="logs-header">
-      <span class="log-ts">Created</span>
-      <span class="log-level">Level</span>
-      <span class="log-svc">Service</span>
-      <span class="log-body-hdr">Details</span>
-    </div>
-    <div id="logs-list" class="list-container">
-      <div class="empty-state">Loading logs…</div>
+    <div class="logs-split">
+      <!-- Left: log list -->
+      <div class="logs-left">
+        <div class="logs-header">
+          <span class="log-ts">Created</span>
+          <span class="log-level">Level</span>
+          <span class="log-svc">Service</span>
+          <span class="log-body-hdr">Details</span>
+        </div>
+        <div id="logs-list" class="list-container">
+          <div class="empty-state">Loading logs…</div>
+        </div>
+      </div>
+
+      <!-- Resize divider -->
+      <div class="logs-divider" id="logs-divider" title="Drag to resize"></div>
+
+      <!-- Right: log detail panel -->
+      <div class="logs-right" id="log-detail-panel">
+        <div class="span-detail-placeholder">
+          ← Click a log entry to view its details
+        </div>
+      </div>
     </div>
   </div>
 
@@ -245,6 +275,14 @@ export class OtelInsightsPanel {
     for (const d of this.disposables) { d.dispose(); }
     this.disposables.length = 0;
   }
+}
+
+function formatTraceForChat(data: Record<string, unknown>): string {
+  return `#otelSpans Look at trace \`${data.traceId}\``;
+}
+
+function formatSpanForChat(data: Record<string, unknown>): string {
+  return `#otelSpans Look at span \`${data.spanId}\` in trace \`${data.traceId}\``;
 }
 
 function getNonce(): string {

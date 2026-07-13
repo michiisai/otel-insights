@@ -100,7 +100,8 @@ export type WebviewToExtension =
   | { type: 'getSpans'; traceId: string }
   | { type: 'getMetrics' }
   | { type: 'getLogs'; filter?: string; excludes?: string[]; sinceNano?: string; untilNano?: string; minSeverity?: number }
-  | { type: 'clearData' };
+  | { type: 'clearData' }
+  | { type: 'addToChat'; kind: 'trace' | 'span'; data: Record<string, unknown> };
 
 /** Messages sent from the extension host to the webview. */
 export type ExtensionToWebview =

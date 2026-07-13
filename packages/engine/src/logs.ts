@@ -22,9 +22,9 @@ export function getLogs(db: QueryableDB, opts: LogQueryOptions = {}): LogRecord[
   if (untilNano) { conditions.push('timestamp_unix_nano <= ?'); params.push(untilNano); }
 
   if (filter.trim()) {
-    conditions.push('(body LIKE ? OR service_name LIKE ? OR severity_text LIKE ? OR attributes LIKE ?)');
+    conditions.push('(body LIKE ? OR service_name LIKE ? OR severity_text LIKE ? OR attributes LIKE ? OR trace_id LIKE ? OR span_id LIKE ?)');
     const like = `%${filter.trim()}%`;
-    params.push(like, like, like, like);
+    params.push(like, like, like, like, like, like);
   }
 
   for (const excl of excludes) {

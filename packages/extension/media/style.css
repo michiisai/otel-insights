@@ -109,6 +109,9 @@ body {
 /* Traces panel fills available height without extra padding (split handles spacing) */
 #traces-panel.panel { padding: 0; overflow: hidden; }
 
+/* Logs panel: toolbar stays above the split, padding only on toolbar/header */
+#logs-panel.panel { padding: 8px 8px 0; overflow: hidden; }
+
 /* ── Traces filter toolbar ───────────────────────────────────────────── */
 .traces-filters {
   display:     flex;
@@ -150,7 +153,6 @@ body {
 }
 .filter-toggle:hover          { color: var(--fg); border-color: var(--fg-muted); }
 .filter-toggle.active         { color: var(--err); border-color: var(--err); background: rgba(244,71,71,0.1); }
-
 
 .traces-split {
   display:  flex;
@@ -213,14 +215,17 @@ body {
 }
 
 .span-detail-panel-header {
-  font-size:      11px;
-  font-weight:    600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color:          var(--fg-muted);
-  border-bottom:  1px solid var(--border);
-  padding-bottom: 8px;
-  margin-bottom:  10px;
+  font-size:       11px;
+  font-weight:     600;
+  text-transform:  uppercase;
+  letter-spacing:  0.05em;
+  color:           var(--fg-muted);
+  border-bottom:   1px solid var(--border);
+  padding-bottom:  8px;
+  margin-bottom:   10px;
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
 }
 
 .right-panel-span-name {
@@ -376,7 +381,6 @@ body {
   border:                1px solid var(--border);
   border-radius:         4px;
   padding:               8px 10px;
-  margin-bottom:         10px;
 }
 .meta-key {
   color:       var(--fg-muted);
@@ -451,6 +455,27 @@ body {
   cursor: pointer;
 }
 .attr-row-long:hover { background: var(--bg-hover); }
+
+/* ── Add to Chat button ───────────────────────────────────────────────── */
+.add-to-chat-btn {
+  background:     transparent;
+  border:         1px solid var(--border);
+  border-radius:  3px;
+  color:          var(--fg-muted);
+  cursor:         pointer;
+  font-family:    var(--font);
+  font-size:      10px;
+  padding:        1px 6px;
+  flex-shrink:    0;
+  white-space:    nowrap;
+  user-select:    none;
+  visibility:     hidden;
+  transition:     color 0.1s, border-color 0.1s;
+}
+.trace-row:hover .add-to-chat-btn { visibility: visible; }
+.add-to-chat-btn--visible          { visibility: visible !important; }
+.add-to-chat-btn:hover             { color: var(--accent); border-color: var(--accent); }
+
 .attr-chevron {
   display:      inline-block;
   font-size:    9px;
@@ -624,6 +649,48 @@ body {
   align-items: center;
 }
 
+/* ── Logs split layout ───────────────────────────────────────────────── */
+.logs-split {
+  display:  flex;
+  flex:     1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.logs-left {
+  flex:           1;
+  overflow-y:     auto;
+  display:        flex;
+  flex-direction: column;
+  min-width:      180px;
+}
+
+.logs-divider {
+  width:       4px;
+  flex-shrink: 0;
+  cursor:      ew-resize;
+  background:  var(--border);
+  transition:  background 0.15s;
+  position:    relative;
+}
+.logs-divider:hover,
+.logs-divider.dragging { background: var(--accent); }
+.logs-divider::after {
+  content:  '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -4px; right: -4px;
+}
+
+.logs-right {
+  width:          35%;
+  min-width:      20%;
+  flex-shrink:    0;
+  overflow-y:     auto;
+  padding:        12px 14px 20px;
+  background:     var(--bg-subtle);
+}
+
 .log-filter-wrap {
   position:   relative;
   flex:        1;
@@ -715,6 +782,7 @@ body {
 .log-row--warn  { border-left-color: var(--warn-fg); background: rgba(204, 167, 0, 0.05); }
 .log-row--info  { border-left-color: var(--accent); }
 .log-row--debug { opacity: 0.7; }
+.log-row--selected { background: var(--bg-hover) !important; outline: 1px solid var(--border); }
 
 .log-ts    { color: var(--fg-muted); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; flex-shrink: 0; width: 160px; }
 .log-level { font-weight: 700; font-size: 10px; width: 50px; flex-shrink: 0; }
@@ -725,3 +793,39 @@ body {
 .log-svc   { color: var(--fg-muted); font-size: 11px; flex-shrink: 0; width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-body  { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
 .log-body-hdr { flex: 1; min-width: 0; }
+
+.log-detail-body {
+  font-family:   var(--font-mono);
+  font-size:     12px;
+  white-space:   pre-wrap;
+  word-break:    break-word;
+  background:    var(--bg);
+  border:        1px solid var(--border);
+  border-radius: 4px;
+  padding:       8px;
+  margin:        0;
+  color:         var(--fg);
+}
+
+.log-detail-content {
+  display:        flex;
+  flex-direction: column;
+  gap:            12px;
+}
+
+.selectable { user-select: text; cursor: text; }
+.text-muted { color: var(--fg-muted); }
+
+.trace-deeplink {
+  font-family:      var(--font-mono);
+  font-size:        11px;
+  color:            var(--accent);
+  background:       none;
+  border:           none;
+  padding:          0;
+  cursor:           pointer;
+  text-decoration:  underline;
+  text-underline-offset: 2px;
+  word-break:       break-all;
+}
+.trace-deeplink:hover { opacity: 0.8; }
