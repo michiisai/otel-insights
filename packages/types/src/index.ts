@@ -101,7 +101,6 @@ export type WebviewToExtension =
   | { type: 'getMetrics' }
   | { type: 'getLogs'; filter?: string; excludes?: string[]; sinceNano?: string; untilNano?: string; minSeverity?: number }
   | { type: 'clearData' }
-  | { type: 'addToChat'; kind: 'trace' | 'span'; data: Record<string, unknown> }
   | { type: 'addItemsToChat'; traces: Record<string, unknown>[]; spans: Record<string, unknown>[] };
 
 /** Messages sent from the extension host to the webview. */

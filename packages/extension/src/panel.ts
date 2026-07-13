@@ -100,21 +100,6 @@ export class OtelInsightsPanel {
         }
         break;
       }
-      case 'addToChat': {
-        const formatted = msg.kind === 'trace'
-          ? formatTraceForChat(msg.data)
-          : formatSpanForChat(msg.data);
-        try {
-          await vscode.commands.executeCommand('workbench.action.chat.open', {
-            query: formatted,
-            isPartialQuery: true,
-          });
-        } catch {
-          await vscode.env.clipboard.writeText(formatted);
-          vscode.window.showInformationMessage('Copied to clipboard — paste into chat');
-        }
-        break;
-      }
       case 'addItemsToChat': {
         const formatted = formatItemsForChat(msg.traces, msg.spans);
         try {
