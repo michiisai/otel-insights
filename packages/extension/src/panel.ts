@@ -173,7 +173,7 @@ export class OtelInsightsPanel {
           <span class="cell cell--ts">Time</span>
           <span class="cell cell--dur">Duration</span>
           <span class="cell cell--spans">Spans</span>
-          <span class="pill pill--err" style="visibility:hidden">ERR</span>
+          <button class="add-to-chat-btn" style="visibility:hidden" aria-hidden="true" tabindex="-1">+ chat</button>
         </div>
         <div id="traces-list" class="list-container">
           <div class="empty-state">Loading traces…</div>

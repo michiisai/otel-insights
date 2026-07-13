@@ -334,7 +334,7 @@ body {
   display:        flex;
   align-items:    center;
   gap:            8px;
-  padding:        4px 8px;
+  padding:        4px 17px;
   font-size:      11px;
   font-weight:    600;
   color:          var(--fg-muted);
@@ -465,12 +465,16 @@ body {
   cursor:         pointer;
   font-family:    var(--font);
   font-size:      10px;
-  padding:        1px 6px;
+  padding:        1px 4px;
+  width:          42px;
   flex-shrink:    0;
+  margin-left:    0;
   white-space:    nowrap;
   user-select:    none;
   visibility:     hidden;
   transition:     color 0.1s, border-color 0.1s;
+  line-height:    1.2;
+  box-sizing:     border-box;
 }
 .trace-row:hover .add-to-chat-btn { visibility: visible; }
 .add-to-chat-btn--visible          { visibility: visible !important; }
@@ -490,10 +494,10 @@ body {
 .cell--name    { flex: 1; overflow: hidden; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
 .trace-name    { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trace-id      { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.7; user-select: text; cursor: text; }
-.cell--service { color: var(--fg-muted); font-size: 11px; min-width: 80px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
-.cell--ts      { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); min-width: 140px; flex-shrink: 0; white-space: nowrap; }
-.cell--dur     { font-family: var(--font-mono); font-size: 11px; color: var(--ok); min-width: 55px; text-align: right; flex-shrink: 0; }
-.cell--spans   { color: var(--fg-muted); font-size: 11px; min-width: 55px; text-align: right; flex-shrink: 0; }
+.cell--service { color: var(--fg-muted); font-size: 11px; width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.cell--ts      { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); width: 145px; flex-shrink: 0; white-space: nowrap; }
+.cell--dur     { font-family: var(--font-mono); font-size: 11px; color: var(--ok); width: 70px; text-align: left; flex-shrink: 0; }
+.cell--spans   { color: var(--fg-muted); font-size: 11px; min-width: 55px; white-space: nowrap; text-align: left; flex-shrink: 0; }
 
 /* ── Span kind badges ─────────────────────────────────────────────────── */
 .span-kind {
@@ -522,7 +526,7 @@ body {
   flex-shrink:   0;
 }
 .pill--err { background: rgba(244, 71, 71, 0.2); color: var(--err); }
-.pill--hidden { visibility: hidden; }
+.pill--hidden { display: none; }
 
 .attr-badge {
   font-size:     10px;
