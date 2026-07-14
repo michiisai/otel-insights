@@ -43,6 +43,8 @@
   let errorsOnly = false;
   /** @type {any[]} */
   let currentLogs = [];
+  /** Index of the currently selected log row (-1 = none) */
+  let selectedLogIdx = -1;
   /** Pending deeplink: after navigating to traces, auto-expand this trace and highlight this span */
   /** @type {{ traceId: string, spanId: string | null } | null} */
   let pendingDeeplink = null;
@@ -780,8 +782,9 @@
       const levelText  = (log.severityText || severityLabel(log.severityNumber)).toUpperCase();
       const levelClass = severityClass(log.severityNumber);
       const ts         = fmtNano(log.timestampUnixNano);
+      const isSelected = i === selectedLogIdx;
       return `
-        <div class="log-row log-row--${levelClass}" data-log-idx="${i}" style="cursor:pointer">
+        <div class="log-row log-row--${levelClass}${isSelected ? ' log-row--selected' : ''}" data-log-idx="${i}" style="cursor:pointer">
           <span class="log-ts">${ts}</span>
           <span class="log-level log-level--${levelClass}">${levelText}</span>
           <span class="log-svc">${esc(log.serviceName)}</span>
@@ -799,7 +802,8 @@
     const log = currentLogs[idx];
     if (!log) { return; }
 
-    // Highlight selected row
+    // Highlight selected row and persist index
+    selectedLogIdx = idx;
     logsList.querySelectorAll('.log-row').forEach(r => r.classList.remove('log-row--selected'));
     row.classList.add('log-row--selected');
 
