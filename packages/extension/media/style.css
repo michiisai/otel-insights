@@ -527,11 +527,12 @@ body {
   border:           1px solid var(--border);
   border-radius:    6px;
   box-shadow:       0 4px 12px rgba(0,0,0,0.4);
-  width:            max-content;
-  max-width:        220px;
+  min-width:        120px;
+  max-width:        200px;
   padding:          4px;
   display:          flex;
   flex-direction:   column;
+  flex-wrap:        nowrap;
   gap:              2px;
 }
 .service-filter-option {
@@ -543,6 +544,9 @@ body {
   font-family:    var(--font);
   font-size:      12px;
   padding:        5px 10px;
+  width:          100%;
+  text-align:     left;
+  display:        block;
   text-align:     left;
   white-space:    nowrap;
 }
