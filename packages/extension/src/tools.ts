@@ -15,11 +15,14 @@ import {
 
 // Generates a markdown URI link that opens the OTel Insights panel at a specific trace/span.
 // Uses vscode.env.uriScheme so the link works in both stable ("vscode") and Insiders ("vscode-insiders") builds.
-function traceDeeplink(traceId: string, spanId?: string): string {
+function traceDeeplink(traceId: string, spanId?: string, label?: string): string {
   const query = spanId
     ? `traceId=${encodeURIComponent(traceId)}&spanId=${encodeURIComponent(spanId)}`
     : `traceId=${encodeURIComponent(traceId)}`;
-  return `[↗ View in OTel Insights](${vscode.env.uriScheme}://michiisai.otel-insights/navigate?${query})`;
+  const text = label ?? (spanId
+    ? `↗ Open span ${spanId} in OTel Insights`
+    : `↗ Open trace ${traceId} in OTel Insights`);
+  return `[${text}](${vscode.env.uriScheme}://michiisai.otel-insights/navigate?${query})`;
 }
 
 function nanoToDate(nano: string): string {
@@ -123,11 +126,11 @@ class FindRecentErrorsTool implements vscode.LanguageModelTool<FindRecentErrorsI
       lines.push(`- traceId: ${t.traceId}`);
       lines.push(`- time: ${nanoToDate(t.startTimeUnixNano)}`);
       lines.push(`- duration: ${t.durationMs}ms | spans: ${t.spanCount} | errors: ${t.errorSpans.length}`);
-      lines.push(`- ${traceDeeplink(t.traceId)}`);
+      lines.push(`- ${traceDeeplink(t.traceId, undefined, `↗ Open trace ${t.traceId} in OTel Insights`)}`);
 
       for (const es of t.errorSpans) {
         lines.push(`\n  ❌ span: ${es.name} (${es.durationMs}ms)`);
-        lines.push(`     ${traceDeeplink(t.traceId, es.spanId)}`);
+        lines.push(`     ${traceDeeplink(t.traceId, es.spanId, `↗ Open error span ${es.spanId} in OTel Insights`)}`);
         if (es.statusMessage)   { lines.push(`     status: ${es.statusMessage}`); }
         if (es.exceptionType)   { lines.push(`     exception.type: ${es.exceptionType}`); }
         if (es.exceptionMessage) { lines.push(`     exception.message: ${es.exceptionMessage}`); }
@@ -618,7 +621,7 @@ class ListTracesTool implements vscode.LanguageModelTool<ListTracesInput> {
       lines.push(`${status} **${t.rootSpanName}** [${t.serviceName}]`);
       lines.push(`   traceId: \`${t.traceId}\``);
       lines.push(`   time: ${time} | duration: ${t.durationMs}ms | spans: ${t.spanCount}`);
-      lines.push(`   ${traceDeeplink(t.traceId)}`);
+      lines.push(`   ${traceDeeplink(t.traceId, undefined, `↗ Open trace ${t.traceId} in OTel Insights`)}`);
       lines.push('');
     }
 
@@ -703,7 +706,7 @@ class GetTraceTool implements vscode.LanguageModelTool<GetTraceInput> {
         `| models | ${models} |`,
       ] : []),
       '',
-      traceDeeplink(traceId),
+      traceDeeplink(traceId, undefined, `↗ Open trace ${traceId} in OTel Insights`),
       '',
     ];
 
@@ -730,7 +733,7 @@ class GetTraceTool implements vscode.LanguageModelTool<GetTraceInput> {
       lines.push(`${indent}${prefix} [${status}] ${s.name}  (${kind}, ${s.durationMs}ms)`);
       lines.push(`${indent}   spanId: ${s.spanId}${s.parentSpanId ? ` | parent: ${s.parentSpanId}` : ' | ROOT'}`);
       lines.push(`${indent}   started: ${nanoToDate(s.startTimeUnixNano)}`);
-      lines.push(`${indent}   ${traceDeeplink(traceId, s.spanId)}`);
+      lines.push(`${indent}   ${traceDeeplink(traceId, s.spanId, `↗ Open span ${s.spanId} in OTel Insights`)}`);
 
       if (isError && s.statusMessage) {
         lines.push(`${indent}   status message: ${s.statusMessage}`);

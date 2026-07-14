@@ -9,13 +9,13 @@ Query traces, spans, metrics, and logs captured by the OTel Insights extension d
 
 ## ⚠️ Deeplink Rule — MUST FOLLOW
 
-Tool output from `otel-insights_listTraces`, `otel-insights_getTrace`, and `otel-insights_findRecentErrors` contains lines like:
+Tool output from `otel-insights_listTraces`, `otel-insights_getTrace`, and `otel-insights_findRecentErrors` contains labeled deeplinks like:
 
 ```
-[↗ View in OTel Insights](vscode-insiders://michiisai.otel-insights/navigate?traceId=abc123)
+[↗ Open trace abc123 in OTel Insights](vscode-insiders://michiisai.otel-insights/navigate?traceId=abc123)
 ```
 
-You **MUST** copy these lines **exactly as-is** into your response for every trace and span you mention. Do NOT paraphrase, summarize, or drop them. The user needs to click these links to open the OTel Insights panel at the specific trace or span. When a user asks to "drill into", "inspect", "look at", "show me", or "open" a trace or span — always include the deeplink from the tool output so they can navigate directly to it in the extension. If you have already called the tool and have the output, extract and include the `[↗ View in OTel Insights](...)` line verbatim. If you have not yet called the tool, call `otel-insights_getTrace` first, then include the link from its output.
+You **MUST** include these deeplinks in your response for every trace and span you mention. Do NOT drop them. The user needs to click these links to open the OTel Insights panel at the specific trace or span. When a user asks to "drill into", "inspect", "look at", "show me", or "open" a trace or span — always include the deeplink from the tool output so they can navigate directly to it in the extension. If you have already called the tool and have the output, include the deeplink markdown line from the tool output. If you have not yet called the tool, call `otel-insights_getTrace` first, then include the link from its output.
 
 ## ⚠️ ID Rule — MUST FOLLOW
 
@@ -148,4 +148,4 @@ When omitted, tools return data across all stored telemetry.
 - Token usage requires spans with `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` attributes.
 - Tool call stats require spans with `gen_ai.tool.name` or `tool.name` attributes.
 - Service/agent names come from the `service_name` field set in your OTLP resource attributes (`service.name`).
-- `listTraces`, `getTrace`, and `findRecentErrors` include **↗ View in OTel Insights** deeplinks. `listTraces` and `findRecentErrors` include a trace-level link per trace. `getTrace` and `findRecentErrors` also include a span-level link per individual span, which opens the panel, auto-expands the trace, and highlights that specific span in the waterfall view. **Always include these links verbatim in your response — never paraphrase or drop them.** Copy the exact markdown `[↗ View in OTel Insights](vscode://...)` from the tool output into your reply so the user can click them.
+- `listTraces`, `getTrace`, and `findRecentErrors` include labeled OTel Insights deeplinks (trace-level and span-level). `listTraces` and `findRecentErrors` include a trace-level link per trace. `getTrace` and `findRecentErrors` also include a span-level link per individual span, which opens the panel, auto-expands the trace, and highlights that specific span in the waterfall view. **Always include these links in your response — never drop them.** Copy the deeplink markdown from the tool output into your reply so the user can click it.
