@@ -180,12 +180,19 @@
     vscode.postMessage({ type: 'clearData' });
   });
 
+  // Log time sort toggle
+  logTimeSortBtn?.addEventListener('click', () => {
+    logTimeSortOrder = logTimeSortOrder === 'desc' ? 'asc' : 'desc';
+    if (logTimeSortIcon) { logTimeSortIcon.textContent = logTimeSortOrder === 'desc' ? '↓' : '↑'; }
+    logTimeSortBtn.classList.toggle('header-filter-btn--active', logTimeSortOrder === 'asc');
+    fetchLogs();
+  });
+
   // Log level filter dropdown toggle
   logLevelFilterBtn?.addEventListener('click', e => {
     e.stopPropagation();
     if (!logLevelFilterDropdown) { return; }
     const isOpen = logLevelFilterDropdown.style.display !== 'none';
-    // close other log dropdown
     if (logServiceFilterDropdown) { logServiceFilterDropdown.style.display = 'none'; }
     logLevelFilterDropdown.style.display = isOpen ? 'none' : 'block';
   });
@@ -195,30 +202,8 @@
     e.stopPropagation();
     if (!logServiceFilterDropdown) { return; }
     const isOpen = logServiceFilterDropdown.style.display !== 'none';
-    // close other log dropdown
     if (logLevelFilterDropdown) { logLevelFilterDropdown.style.display = 'none'; }
     logServiceFilterDropdown.style.display = isOpen ? 'none' : 'block';
-  });
-    logTimeSortOrder = logTimeSortOrder === 'desc' ? 'asc' : 'desc';
-    if (logTimeSortIcon) { logTimeSortIcon.textContent = logTimeSortOrder === 'desc' ? '↓' : '↑'; }
-    logTimeSortBtn.classList.toggle('header-filter-btn--active', logTimeSortOrder === 'asc');
-    fetchLogs();
-  });
-
-  // Log service filter dropdown toggle
-  logServiceFilterBtn?.addEventListener('click', e => {
-    e.stopPropagation();
-    if (!logServiceFilterDropdown) { return; }
-    const isOpen = logServiceFilterDropdown.style.display !== 'none';
-    logServiceFilterDropdown.style.display = isOpen ? 'none' : 'block';
-  });
-
-  // Log level filter dropdown toggle
-  logLevelFilterBtn?.addEventListener('click', e => {
-    e.stopPropagation();
-    if (!logLevelFilterDropdown) { return; }
-    const isOpen = logLevelFilterDropdown.style.display !== 'none';
-    logLevelFilterDropdown.style.display = isOpen ? 'none' : 'block';
   });
 
   logLevelFilterDropdown?.querySelectorAll('.service-filter-option').forEach(btn => {

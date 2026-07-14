@@ -139,6 +139,12 @@ class DatabaseAdapter implements QueryableDB {
 
 // ── TelemetryStore ────────────────────────────────────────────────────────────
 
+// Maximum rows retained per table. Oldest rows (by insertion order / autoincrement id)
+// are pruned after each insert so the database never grows unbounded.
+const MAX_SPANS   = 50_000;
+const MAX_METRICS = 50_000;
+const MAX_LOGS    = 50_000;
+
 export class TelemetryStore {
   private sqlDb!: SqlJs.Database;
   private adapter!: DatabaseAdapter;
@@ -193,6 +199,7 @@ export class TelemetryStore {
       }
       s.free();
     });
+    this.pruneTable('spans', MAX_SPANS);
   }
 
   insertMetrics(rows: MetricRow[]): void {
@@ -208,6 +215,7 @@ export class TelemetryStore {
       }
       s.free();
     });
+    this.pruneTable('metric_points', MAX_METRICS);
   }
 
   insertLogs(rows: LogRow[]): void {
@@ -225,6 +233,20 @@ export class TelemetryStore {
       }
       s.free();
     });
+    this.pruneTable('logs', MAX_LOGS);
+  }
+
+  /**
+   * Deletes the oldest rows in `table` (by autoincrement `id`, i.e. insertion order)
+   * once its row count exceeds `maxRows`, keeping only the most recent `maxRows` rows.
+   */
+  private pruneTable(table: 'spans' | 'metric_points' | 'logs', maxRows: number): void {
+    const countRow = this.sqlDb.exec(`SELECT COUNT(*) AS c FROM ${table}`)[0];
+    const count = Number(countRow?.values?.[0]?.[0] ?? 0);
+    if (count <= maxRows) { return; }
+    this.sqlDb.run(
+      `DELETE FROM ${table} WHERE id NOT IN (SELECT id FROM ${table} ORDER BY id DESC LIMIT ${maxRows})`,
+    );
   }
 
   clear(): void {
