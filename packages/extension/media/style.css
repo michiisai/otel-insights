@@ -358,6 +358,8 @@ body {
   user-select:      none;
 }
 .trace-row:hover  { background: var(--bg-hover); }
+.trace-row.row--error { border-left: 3px solid var(--err); padding-left: 5px; }
+.trace-row.row--error:hover { background: color-mix(in srgb, var(--err) 8%, var(--bg-hover)); }
 /* when trace is collapsed give it a full rounded border */
 .trace-row.collapsed {
   border-radius:  4px;

@@ -378,7 +378,6 @@
           <span class="cell cell--ts">${fmtNano(t.startTimeUnixNano)}</span>
           <span class="cell cell--dur">${fmtMs(t.durationMs)}</span>
           <span class="cell cell--spans">${t.spanCount} span${t.spanCount !== 1 ? 's' : ''}</span>
-          <span class="pill pill--err${t.hasError ? '' : ' pill--hidden'}" aria-hidden="${t.hasError ? 'false' : 'true'}">ERR</span>
           <button class="add-to-chat-btn${isSelected ? ' add-to-chat-btn--selected' : ''}" title="Add trace to chat" tabindex="-1">${isSelected ? '✓ added' : '+ chat'}</button>
         </div>
         <div class="waterfall-container" id="sc-${esc(t.traceId)}"
