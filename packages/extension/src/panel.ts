@@ -154,7 +154,7 @@ export class OtelInsightsPanel {
     </nav>
     <div class="toolbar-right">
       <span id="status-badge" class="badge">connecting…</span>
-      <button id="refresh-btn" class="icon-btn" title="Refresh data">↻ Refresh</button>
+      <button id="refresh-btn" class="icon-btn" title="Refresh data"><span style="display:inline-block;vertical-align:middle;line-height:1">↻</span> Refresh</button>
       <button id="clear-btn"   class="icon-btn icon-btn--danger" title="Clear all stored telemetry">✕ Clear</button>
     </div>
   </header>
