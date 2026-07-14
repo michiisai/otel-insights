@@ -29,8 +29,16 @@
   const logSeverity    = /** @type {HTMLSelectElement} */ ($('log-severity'));
   const logFilterIcon  = $('log-filter-icon');
   const traceSearch    = /** @type {HTMLInputElement}  */ ($('trace-search'));
-  const traceService   = /** @type {HTMLSelectElement} */ ($('trace-service'));
   const traceErrBtn    = $('trace-errors-btn');
+  const serviceFilterBtn      = $('service-filter-btn');
+  const serviceFilterDropdown = $('service-filter-dropdown');
+  const timeSortBtn  = $('time-sort-btn');
+  const timeSortIcon = $('time-sort-icon');
+
+  /** @type {string} currently selected service filter */
+  let selectedService = '';
+  /** @type {'desc'|'asc'} */
+  let timeSortOrder = 'desc';
 
   let errorsOnly = false;
   /** @type {any[]} */
@@ -95,8 +103,9 @@
     vscode.postMessage({
       type:       'getTraces',
       search:     traceSearch?.value  || undefined,
-      service:    traceService?.value || undefined,
+      service:    selectedService     || undefined,
       errorsOnly: errorsOnly || undefined,
+      sortOrder:  timeSortOrder,
     });
   }
 
@@ -162,11 +171,31 @@
 
   traceSearch?.addEventListener('input', fetchTraces);
   traceSearch?.addEventListener('keydown', e => { if (e.key === 'Enter') { fetchTraces(); } });
-  traceService?.addEventListener('change', fetchTraces);
   traceErrBtn?.addEventListener('click', () => {
     errorsOnly = !errorsOnly;
     traceErrBtn.classList.toggle('active', errorsOnly);
     fetchTraces();
+  });
+
+  // Time sort toggle
+  timeSortBtn?.addEventListener('click', () => {
+    timeSortOrder = timeSortOrder === 'desc' ? 'asc' : 'desc';
+    if (timeSortIcon) { timeSortIcon.textContent = timeSortOrder === 'desc' ? '↓' : '↑'; }
+    timeSortBtn.classList.toggle('header-filter-btn--active', timeSortOrder === 'asc');
+    fetchTraces();
+  });
+
+  // Service filter dropdown toggle
+  serviceFilterBtn?.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!serviceFilterDropdown) { return; }
+    const isOpen = serviceFilterDropdown.style.display !== 'none';
+    serviceFilterDropdown.style.display = isOpen ? 'none' : 'block';
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', () => {
+    if (serviceFilterDropdown) { serviceFilterDropdown.style.display = 'none'; }
   });
 
   // ── Traces panel resize ───────────────────────────────────────────────────────
@@ -263,6 +292,7 @@
       case 'metrics': renderMetrics(msg.data);              break;
       case 'logs':    renderLogs(msg.data);                 break;
       case 'cleared': vscode.postMessage({ type: 'getServices' }); loadCurrentTab(); break;
+      case 'navigateToTrace': navigateToTrace(msg.traceId, msg.spanId ?? null); break;
     }
   });
 
@@ -289,10 +319,31 @@
 
   // ── Services dropdown ────────────────────────────────────────────────────────
   function renderServices(/** @type {string[]} */ services) {
-    if (!traceService) { return; }
-    const current = traceService.value;
-    traceService.innerHTML = '<option value="">All services</option>' +
-      services.map(s => `<option value="${esc(s)}"${s === current ? ' selected' : ''}>${esc(s)}</option>`).join('');
+    if (!serviceFilterDropdown || !serviceFilterBtn) { return; }
+
+    const allServices = ['', ...services];
+    serviceFilterDropdown.innerHTML = allServices.map(s => {
+      const label    = s || 'All services';
+      const isActive = s === selectedService;
+      return `<button class="service-filter-option${isActive ? ' active' : ''}" data-value="${esc(s)}">${esc(label)}</button>`;
+    }).join('');
+
+    serviceFilterDropdown.querySelectorAll('.service-filter-option').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        selectedService = /** @type {HTMLElement} */ (btn).dataset.value ?? '';
+        serviceFilterDropdown.style.display = 'none';
+
+        // Update button label and active state
+        const icon = $('service-filter-icon');
+        const label = selectedService || 'Service';
+        serviceFilterBtn.childNodes[0].textContent = label + ' ';
+        serviceFilterBtn.classList.toggle('header-filter-btn--active', !!selectedService);
+        if (icon) { icon.textContent = '▾'; }
+
+        fetchTraces();
+      });
+    });
   }
 
   // ── Chat selection sync ──────────────────────────────────────────────────────

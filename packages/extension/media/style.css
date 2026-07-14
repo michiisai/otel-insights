@@ -125,8 +125,7 @@ body {
   background:  var(--bg-subtle);
 }
 
-.traces-filters input,
-.traces-filters select {
+.traces-filters input {
   background:    var(--bg-input);
   border:        1px solid var(--border);
   border-radius: 4px;
@@ -135,11 +134,10 @@ body {
   font-size:     var(--font-size);
   padding:       3px 7px;
   outline:       none;
+  flex:          1;
+  min-width:     0;
 }
-.traces-filters input         { flex: 1; min-width: 0; }
-.traces-filters select        { flex-shrink: 0; }
-.traces-filters input:focus,
-.traces-filters select:focus  { border-color: var(--accent); }
+.traces-filters input:focus { border-color: var(--accent); }
 
 .filter-toggle {
   background:    transparent;
@@ -497,7 +495,59 @@ body {
 .cell--name    { flex: 1; overflow: hidden; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
 .trace-name    { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trace-id      { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.7; user-select: text; cursor: text; }
-.cell--service { color: var(--fg-muted); font-size: 11px; width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.cell--service { color: var(--fg-muted); font-size: 11px; width: 110px; overflow: visible; flex-shrink: 0; position: relative; }
+
+/* ── Service header filter button ────────────────────────────────────── */
+.header-filter-btn {
+  background:     transparent;
+  border:         none;
+  color:          inherit;
+  font:           inherit;
+  font-size:      11px;
+  font-weight:    600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor:         pointer;
+  padding:        0;
+  display:        flex;
+  align-items:    center;
+  gap:            2px;
+  white-space:    nowrap;
+}
+.header-filter-btn:hover { color: var(--fg); }
+.header-filter-btn--active { color: var(--accent); }
+.header-filter-icon { font-size: 9px; opacity: 0.7; }
+
+.header-filter-dropdown {
+  position:         absolute;
+  top:              calc(100% + 4px);
+  left:             0;
+  z-index:          100;
+  background:       var(--vscode-editorWidget-background, #252526);
+  border:           1px solid var(--border);
+  border-radius:    6px;
+  box-shadow:       0 4px 12px rgba(0,0,0,0.4);
+  width:            max-content;
+  max-width:        220px;
+  padding:          4px;
+  display:          flex;
+  flex-direction:   column;
+  gap:              2px;
+}
+.service-filter-option {
+  background:     transparent;
+  border:         none;
+  border-radius:  4px;
+  color:          var(--fg-muted);
+  cursor:         pointer;
+  font-family:    var(--font);
+  font-size:      12px;
+  padding:        5px 10px;
+  text-align:     left;
+  white-space:    nowrap;
+}
+.service-filter-option:hover  { background: var(--bg-hover); color: var(--fg); }
+.service-filter-option.active { color: var(--accent); font-weight: 600; }
 .cell--ts      { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); width: 145px; flex-shrink: 0; white-space: nowrap; }
 .cell--dur     { font-family: var(--font-mono); font-size: 11px; color: var(--ok); width: 70px; text-align: left; flex-shrink: 0; }
 .cell--spans   { color: var(--fg-muted); font-size: 11px; min-width: 55px; white-space: nowrap; text-align: left; flex-shrink: 0; }

@@ -9,6 +9,7 @@ export interface GetTracesOptions {
   errorsOnly?: boolean;
   attributeKey?: string;
   attributeValue?: string;
+  sortOrder?: 'desc' | 'asc';
 }
 
 export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[] {
@@ -21,6 +22,7 @@ export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[]
     errorsOnly,
     attributeKey,
     attributeValue,
+    sortOrder = 'desc',
   } = opts;
 
   const conditions: string[] = [];
@@ -86,7 +88,7 @@ export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[]
     ${whereClause}
     GROUP BY trace_id
     ${havingClause}
-    ORDER BY MIN(start_time_unix_nano) DESC
+    ORDER BY MIN(start_time_unix_nano) ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
     LIMIT ?
   `).all(...params);
 

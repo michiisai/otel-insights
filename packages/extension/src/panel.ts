@@ -53,6 +53,11 @@ export class OtelInsightsPanel {
     this.post({ type: 'status', connected: true, port: this.port });
   }
 
+  navigateToTrace(traceId: string, spanId?: string): void {
+    this.panel.reveal();
+    this.post({ type: 'navigateToTrace', traceId, spanId });
+  }
+
   private post(msg: ExtensionToWebview): void {
     this.panel.webview.postMessage(msg);
   }
@@ -68,6 +73,7 @@ export class OtelInsightsPanel {
           nameSearch: msg.search,
           serviceName: msg.service,
           errorsOnly: msg.errorsOnly,
+          sortOrder: msg.sortOrder,
         }) });
         break;
       case 'getServices':
@@ -161,16 +167,18 @@ export class OtelInsightsPanel {
       <div class="traces-left">
         <div class="traces-filters">
           <input  id="trace-search"   type="text" placeholder="Search traces…" />
-          <select id="trace-service">
-            <option value="">All services</option>
-          </select>
           <button id="trace-errors-btn" class="filter-toggle" title="Errors only">⚠ Errors</button>
         </div>
         <div class="traces-header" aria-hidden="true">
           <span class="expand-icon"></span>
           <span class="cell cell--name">Trace</span>
-          <span class="cell cell--service">Service</span>
-          <span class="cell cell--ts">Time</span>
+          <span class="cell cell--service">
+            <button id="service-filter-btn" class="header-filter-btn" title="Filter by service">Service <span id="service-filter-icon" class="header-filter-icon">▾</span></button>
+            <div id="service-filter-dropdown" class="header-filter-dropdown" style="display:none"></div>
+          </span>
+          <span class="cell cell--ts">
+            <button id="time-sort-btn" class="header-filter-btn" title="Sort by time">Time <span id="time-sort-icon" class="header-filter-icon">↓</span></button>
+          </span>
           <span class="cell cell--dur">Duration</span>
           <span class="cell cell--spans">Spans</span>
           <button class="add-to-chat-btn" style="visibility:hidden" aria-hidden="true" tabindex="-1">+ chat</button>

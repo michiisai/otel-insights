@@ -45,6 +45,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.window.showInformationMessage('OTel Insights: All telemetry data cleared.');
       OtelInsightsPanel.currentPanel?.refresh();
     }),
+    vscode.commands.registerCommand('otel-insights.navigateToTrace', (traceId: string, spanId?: string) => {
+      OtelInsightsPanel.createOrShow(context.extensionUri, store!, port);
+      OtelInsightsPanel.currentPanel?.navigateToTrace(traceId, spanId);
+    }),
+    vscode.window.registerUriHandler({
+      handleUri(uri: vscode.Uri) {
+        if (uri.path === '/navigate') {
+          const params = new URLSearchParams(uri.query);
+          const traceId = params.get('traceId');
+          const spanId  = params.get('spanId') ?? undefined;
+          if (traceId) {
+            OtelInsightsPanel.createOrShow(context.extensionUri, store!, port);
+            OtelInsightsPanel.currentPanel?.navigateToTrace(traceId, spanId);
+          }
+        }
+      },
+    }),
   );
 
   registerTools(context, store);

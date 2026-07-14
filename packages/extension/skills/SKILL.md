@@ -7,6 +7,20 @@ description: 'Query live OpenTelemetry telemetry collected by the OTel Insights 
 
 Query traces, spans, metrics, and logs captured by the OTel Insights extension directly from the agent.
 
+## ⚠️ Deeplink Rule — MUST FOLLOW
+
+Tool output from `otel-insights_listTraces`, `otel-insights_getTrace`, and `otel-insights_findRecentErrors` contains lines like:
+
+```
+[↗ View in OTel Insights](vscode-insiders://michiisai.otel-insights/navigate?traceId=abc123)
+```
+
+You **MUST** copy these lines **exactly as-is** into your response for every trace and span you mention. Do NOT paraphrase, summarize, or drop them. The user needs to click these links to open the OTel Insights panel at the specific trace or span. When a user asks to "drill into", "inspect", "look at", "show me", or "open" a trace or span — always include the deeplink from the tool output so they can navigate directly to it in the extension. If you have already called the tool and have the output, extract and include the `[↗ View in OTel Insights](...)` line verbatim. If you have not yet called the tool, call `otel-insights_getTrace` first, then include the link from its output.
+
+## ⚠️ ID Rule — MUST FOLLOW
+
+Whenever any otel-insights tool returns a `traceId` or `spanId`, you **MUST** always include it in your response in a copyable inline code format, e.g. `abc123def456`. Never omit or truncate IDs. Users may need to copy-paste them into the OTel Insights search box in the webview to find a specific trace or span.
+
 ## Trigger Rules
 
 ALWAYS call `otel-insights_getSlowestSpans` when the user asks about or mentions anything slow — including but not limited to:
@@ -31,7 +45,6 @@ ALWAYS call `otel-insights_listTraces` when the user wants to browse, list, or f
 
 ALWAYS call `otel-insights_getTrace` when the user wants to inspect a specific trace by ID, understand what happened in a run, or drill into spans — for any trace (not just errors).
 
-1
 ## Available Tools
 
 | Tool | Purpose | Key inputs |
@@ -135,3 +148,4 @@ When omitted, tools return data across all stored telemetry.
 - Token usage requires spans with `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` attributes.
 - Tool call stats require spans with `gen_ai.tool.name` or `tool.name` attributes.
 - Service/agent names come from the `service_name` field set in your OTLP resource attributes (`service.name`).
+- `listTraces`, `getTrace`, and `findRecentErrors` include **↗ View in OTel Insights** deeplinks. `listTraces` and `findRecentErrors` include a trace-level link per trace. `getTrace` and `findRecentErrors` also include a span-level link per individual span, which opens the panel, auto-expands the trace, and highlights that specific span in the waterfall view. **Always include these links verbatim in your response — never paraphrase or drop them.** Copy the exact markdown `[↗ View in OTel Insights](vscode://...)` from the tool output into your reply so the user can click them.

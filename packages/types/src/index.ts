@@ -95,7 +95,7 @@ export interface QueryableDB {
 /** Messages sent from the webview to the extension host. */
 export type WebviewToExtension =
   | { type: 'ready' }
-  | { type: 'getTraces'; search?: string; service?: string; errorsOnly?: boolean }
+  | { type: 'getTraces'; search?: string; service?: string; errorsOnly?: boolean; sortOrder?: 'asc' | 'desc' }
   | { type: 'getServices' }
   | { type: 'getSpans'; traceId: string }
   | { type: 'getMetrics' }
@@ -112,4 +112,5 @@ export type ExtensionToWebview =
   | { type: 'logs'; data: LogRecord[] }
   | { type: 'status'; connected: boolean; port: number }
   | { type: 'cleared' }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'navigateToTrace'; traceId: string; spanId?: string };
