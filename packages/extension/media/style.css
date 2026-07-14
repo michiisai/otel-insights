@@ -516,7 +516,7 @@ body {
 }
 .header-filter-btn:hover { color: var(--fg); }
 .header-filter-btn--active { color: var(--accent); }
-.header-filter-icon { font-size: 9px; opacity: 0.7; }
+.header-filter-icon { font-size: 13px; opacity: 0.7; }
 
 .header-filter-dropdown {
   position:         absolute;
