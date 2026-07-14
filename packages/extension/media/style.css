@@ -517,6 +517,7 @@ body {
 .header-filter-btn:hover { color: var(--fg); }
 .header-filter-btn--active { color: var(--accent); }
 .header-filter-icon { font-size: 12px; opacity: 0.7; margin-left: 4px; }
+#service-filter-icon { margin-left: 1px; }
 
 .header-filter-dropdown {
   position:         absolute;
