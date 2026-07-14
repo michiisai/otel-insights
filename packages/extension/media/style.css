@@ -72,6 +72,7 @@ body {
 .tab.active { color: var(--fg); border-color: var(--border); background: var(--bg); }
 
 .toolbar-right { display: flex; align-items: center; gap: 6px; }
+.toolbar-btn-group { display: flex; align-items: center; gap: 2px; }
 
 .badge {
   font-size:     11px;
@@ -192,7 +193,7 @@ body {
 }
 
 .traces-right {
-  width:       35%;
+  width:       30%;
   min-width:   20%;
   max-width:   none;
   flex-shrink: 0;
@@ -335,6 +336,7 @@ body {
   align-items:    center;
   gap:            8px;
   padding:        4px 17px;
+  font-family:    var(--font);
   font-size:      11px;
   font-weight:    600;
   color:          var(--fg-muted);
@@ -344,6 +346,14 @@ body {
   letter-spacing: 0.05em;
   user-select:    none;
 }
+/* Header label cells should always use the UI font, not mono, and match header size */
+.traces-header .cell--ts,
+.traces-header .cell--dur { font-family: var(--font); }
+.traces-header .cell--name,
+.traces-header .cell--service,
+.traces-header .cell--ts,
+.traces-header .cell--dur,
+.traces-header .cell--spans { font-size: 11px; }
 
 .trace-row {
   display:          flex;
@@ -494,10 +504,10 @@ body {
 }
 
 /* ── Shared cells ─────────────────────────────────────────────────────── */
-.cell--name    { flex: 1; overflow: hidden; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
+.cell--name    { flex: 1; overflow: hidden; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; font-size: 12px; }
 .trace-name    { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trace-id      { font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.7; user-select: text; cursor: text; }
-.cell--service { color: var(--fg-muted); font-size: 11px; width: 110px; overflow: visible; flex-shrink: 0; position: relative; }
+.cell--service { color: var(--fg-muted); font-size: 12px; width: 110px; overflow: visible; flex-shrink: 0; position: relative; }
 
 /* ── Service header filter button ────────────────────────────────────── */
 .header-filter-btn {
@@ -555,9 +565,9 @@ body {
 }
 .service-filter-option:hover  { background: var(--bg-hover); color: var(--fg); }
 .service-filter-option.active { color: var(--accent); font-weight: 600; }
-.cell--ts      { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); width: 145px; flex-shrink: 0; white-space: nowrap; }
-.cell--dur     { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); width: 70px; text-align: left; flex-shrink: 0; }
-.cell--spans   { color: var(--fg-muted); font-size: 11px; min-width: 55px; white-space: nowrap; text-align: left; flex-shrink: 0; }
+.cell--ts      { font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); width: 145px; flex-shrink: 0; white-space: nowrap; }
+.cell--dur     { font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); width: 70px; text-align: left; flex-shrink: 0; }
+.cell--spans   { color: var(--fg-muted); font-size: 12px; min-width: 55px; white-space: nowrap; text-align: left; flex-shrink: 0; }
 
 /* ── Span kind badges ─────────────────────────────────────────────────── */
 .span-kind {
@@ -747,7 +757,7 @@ body {
 }
 
 .logs-right {
-  width:          35%;
+  width:          30%;
   min-width:      20%;
   flex-shrink:    0;
   overflow-y:     auto;
@@ -831,14 +841,21 @@ body {
   padding:         4px 6px;
   margin:          0 6px;
   border-bottom:   1px solid var(--border);
+  font-family:     var(--font);
   font-size:       11px;
   font-weight:     600;
   color:           var(--fg-muted);
   text-transform:  uppercase;
-  letter-spacing:  0.04em;
+  letter-spacing:  0.05em;
   flex-shrink:     0;
   border-left:     2px solid transparent;
 }
+/* Header label cells should always use the UI font, not mono */
+.logs-header .log-ts { font-family: var(--font); }
+.logs-header .log-ts,
+.logs-header .log-level,
+.logs-header .log-svc,
+.logs-header .log-body-hdr { font-size: 11px; }
 .log-body-hdr { flex: 1; }
 .log-row:hover { background: var(--bg-hover); }
 
@@ -848,14 +865,14 @@ body {
 .log-row--debug { opacity: 0.7; }
 .log-row--selected { background: var(--bg-hover) !important; outline: 1px solid var(--border); }
 
-.log-ts    { color: var(--fg-muted); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; flex-shrink: 0; width: 160px; }
-.log-level { font-weight: 700; font-size: 10px; width: 50px; flex-shrink: 0; }
+.log-ts    { color: var(--fg-muted); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; flex-shrink: 0; width: 160px; }
+.log-level { font-weight: 700; font-size: 12px; width: 50px; flex-shrink: 0; }
 .log-level--error { color: var(--err); }
 .log-level--warn  { color: var(--warn-fg); }
 .log-level--info  { color: var(--accent); }
 .log-level--debug { color: var(--fg-muted); }
-.log-svc   { color: var(--fg-muted); font-size: 11px; flex-shrink: 0; width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log-body  { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.log-svc   { color: var(--fg-muted); font-size: 12px; flex-shrink: 0; width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-body  { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12px; }
 .log-body-hdr { flex: 1; min-width: 0; }
 
 .log-detail-body {

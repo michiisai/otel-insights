@@ -46,6 +46,15 @@ export function getServiceNames(db: QueryableDB): string[] {
   return rows.map(r => String(r['service_name'] ?? ''));
 }
 
+export function getLogServiceNames(db: QueryableDB): string[] {
+  const rows = db.prepare(`
+    SELECT DISTINCT service_name FROM logs
+    WHERE service_name IS NOT NULL AND service_name != ''
+    ORDER BY service_name ASC
+  `).all();
+  return rows.map(r => String(r['service_name'] ?? ''));
+}
+
 export function getServiceSummary(db: QueryableDB, serviceName: string, sinceNano?: string, untilNano?: string): ServiceSummary | null {
   // Verify the service exists
   const exists = db.prepare(`

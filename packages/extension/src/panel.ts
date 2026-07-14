@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { TelemetryStore } from '@otel-insights/receiver';
-import { getTraces, getSpansByTraceId, getServices, getMetricsData, getLogs } from '@otel-insights/engine';
+import { getTraces, getSpansByTraceId, getServices, getMetricsData, getLogs, getLogServiceNames } from '@otel-insights/engine';
 import type { WebviewToExtension, ExtensionToWebview } from '@otel-insights/types';
 
 export class OtelInsightsPanel {
@@ -79,6 +79,9 @@ export class OtelInsightsPanel {
       case 'getServices':
         this.post({ type: 'services', data: getServices(db) });
         break;
+      case 'getLogServices':
+        this.post({ type: 'logServices', data: getLogServiceNames(db) });
+        break;
       case 'getSpans':
         this.post({ type: 'spans', traceId: msg.traceId, data: getSpansByTraceId(db, msg.traceId) });
         break;
@@ -92,6 +95,8 @@ export class OtelInsightsPanel {
           minSeverity: msg.minSeverity,
           sinceNano:   msg.sinceNano,
           untilNano:   msg.untilNano,
+          serviceName: msg.serviceName,
+          sortOrder:   msg.sortOrder,
         }) });
         break;
       case 'clearData': {
@@ -154,8 +159,10 @@ export class OtelInsightsPanel {
     </nav>
     <div class="toolbar-right">
       <span id="status-badge" class="badge">connecting…</span>
-      <button id="refresh-btn" class="icon-btn" title="Refresh data"><span style="display:inline-block;vertical-align:middle;line-height:1">↻</span> Refresh</button>
-      <button id="clear-btn"   class="icon-btn icon-btn--danger" title="Clear all stored telemetry">✕ Clear</button>
+      <span class="toolbar-btn-group">
+        <button id="refresh-btn" class="icon-btn" title="Refresh data"><span style="display:inline-block;vertical-align:middle;line-height:1">↻</span> Refresh</button>
+        <button id="clear-btn"   class="icon-btn icon-btn--danger" title="Clear all stored telemetry">✕ Clear</button>
+      </span>
     </div>
   </header>
 
@@ -235,23 +242,30 @@ export class OtelInsightsPanel {
         <input id="log-filter" type="text" placeholder="Filter (e.g. text, !exclude, before:YYYY-MM-DDTHH:MM:SS)" />
         <span class="log-filter-icon" title="Advanced filter active" id="log-filter-icon">⊘</span>
       </div>
-      <select id="log-severity">
-          <option value="0">All</option>
-          <option value="1">Trace</option>
-          <option value="5">Debug</option>
-          <option value="9">Info</option>
-          <option value="13">Warn</option>
-          <option value="17">Error</option>
-          <option value="21">Fatal</option>
-        </select>
     </div>
     <div class="logs-split">
       <!-- Left: log list -->
       <div class="logs-left">
         <div class="logs-header">
-          <span class="log-ts">Created</span>
-          <span class="log-level">Level</span>
-          <span class="log-svc">Service</span>
+          <span class="log-ts">
+            <button id="log-time-sort-btn" class="header-filter-btn" title="Sort by time">Created <span id="log-time-sort-icon" class="header-filter-icon">↓</span></button>
+          </span>
+          <span class="log-level" style="position:relative;overflow:visible">
+            <button id="log-level-filter-btn" class="header-filter-btn" title="Filter by level">Level <span id="log-level-filter-icon" class="header-filter-icon">▾</span></button>
+            <div id="log-level-filter-dropdown" class="header-filter-dropdown" style="display:none">
+              <button class="service-filter-option active" data-severity="0">All</button>
+              <button class="service-filter-option" data-severity="1">Trace</button>
+              <button class="service-filter-option" data-severity="5">Debug</button>
+              <button class="service-filter-option" data-severity="9">Info</button>
+              <button class="service-filter-option" data-severity="13">Warn</button>
+              <button class="service-filter-option" data-severity="17">Error</button>
+              <button class="service-filter-option" data-severity="21">Fatal</button>
+            </div>
+          </span>
+          <span class="log-svc" style="position:relative;overflow:visible">
+            <button id="log-service-filter-btn" class="header-filter-btn" title="Filter by service">Service <span id="log-service-filter-icon" class="header-filter-icon">▾</span></button>
+            <div id="log-service-filter-dropdown" class="header-filter-dropdown" style="display:none"></div>
+          </span>
           <span class="log-body-hdr">Details</span>
         </div>
         <div id="logs-list" class="list-container">

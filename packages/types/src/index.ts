@@ -97,9 +97,10 @@ export type WebviewToExtension =
   | { type: 'ready' }
   | { type: 'getTraces'; search?: string; service?: string; errorsOnly?: boolean; sortOrder?: 'asc' | 'desc' }
   | { type: 'getServices' }
+  | { type: 'getLogServices' }
   | { type: 'getSpans'; traceId: string }
   | { type: 'getMetrics' }
-  | { type: 'getLogs'; filter?: string; excludes?: string[]; sinceNano?: string; untilNano?: string; minSeverity?: number }
+  | { type: 'getLogs'; filter?: string; excludes?: string[]; sinceNano?: string; untilNano?: string; minSeverity?: number; serviceName?: string; sortOrder?: 'asc' | 'desc' }
   | { type: 'clearData' }
   | { type: 'addItemsToChat'; traces: Record<string, unknown>[]; spans: Record<string, unknown>[] };
 
@@ -107,6 +108,7 @@ export type WebviewToExtension =
 export type ExtensionToWebview =
   | { type: 'traces'; data: Trace[] }
   | { type: 'services'; data: string[] }
+  | { type: 'logServices'; data: string[] }
   | { type: 'spans'; traceId: string; data: Span[] }
   | { type: 'metrics'; data: MetricsData }
   | { type: 'logs'; data: LogRecord[] }

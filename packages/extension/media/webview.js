@@ -26,7 +26,10 @@
   const logsList       = $('logs-list');
   const logDetailPanel = $('log-detail-panel');
   const logFilter      = /** @type {HTMLInputElement}  */ ($('log-filter'));
-  const logSeverity    = /** @type {HTMLSelectElement} */ ($('log-severity'));
+  const logLevelFilterBtn      = $('log-level-filter-btn');
+  const logLevelFilterDropdown = $('log-level-filter-dropdown');
+  /** @type {number} currently selected minimum severity (0 = all) */
+  let selectedLogSeverity = 0;
   const logFilterIcon  = $('log-filter-icon');
   const traceSearch    = /** @type {HTMLInputElement}  */ ($('trace-search'));
   const traceErrBtn    = $('trace-errors-btn');
@@ -34,11 +37,19 @@
   const serviceFilterDropdown = $('service-filter-dropdown');
   const timeSortBtn  = $('time-sort-btn');
   const timeSortIcon = $('time-sort-icon');
+  const logTimeSortBtn  = $('log-time-sort-btn');
+  const logTimeSortIcon = $('log-time-sort-icon');
+  const logServiceFilterBtn      = $('log-service-filter-btn');
+  const logServiceFilterDropdown = $('log-service-filter-dropdown');
 
   /** @type {string} currently selected service filter */
   let selectedService = '';
   /** @type {'desc'|'asc'} */
   let timeSortOrder = 'desc';
+  /** @type {string} currently selected log service filter */
+  let selectedLogService = '';
+  /** @type {'desc'|'asc'} */
+  let logTimeSortOrder = 'desc';
 
   let errorsOnly = false;
   /** @type {any[]} */
@@ -75,7 +86,7 @@
   function loadCurrentTab() {
     if (activeTab === 'traces')           { fetchTraces(); }
     else if (activeTab === 'performance') { vscode.postMessage({ type: 'getMetrics' }); }
-    else if (activeTab === 'logs')        { fetchLogs(); }
+    else if (activeTab === 'logs')        { vscode.postMessage({ type: 'getLogServices' }); fetchLogs(); }
   }
 
   /** Switch to Traces tab, filter to the given trace ID, and optionally highlight a span */
@@ -148,7 +159,9 @@
       excludes:    excludes.length ? excludes : undefined,
       sinceNano:   sinceNano || undefined,
       untilNano:   untilNano || undefined,
-      minSeverity: Number(logSeverity.value),
+      minSeverity: selectedLogSeverity || undefined,
+      serviceName: selectedLogService || undefined,
+      sortOrder:   logTimeSortOrder,
     });
   }
 
@@ -167,7 +180,68 @@
     vscode.postMessage({ type: 'clearData' });
   });
 
-  logSeverity?.addEventListener('change', fetchLogs);
+  // Log level filter dropdown toggle
+  logLevelFilterBtn?.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!logLevelFilterDropdown) { return; }
+    const isOpen = logLevelFilterDropdown.style.display !== 'none';
+    // close other log dropdown
+    if (logServiceFilterDropdown) { logServiceFilterDropdown.style.display = 'none'; }
+    logLevelFilterDropdown.style.display = isOpen ? 'none' : 'block';
+  });
+
+  // Log service filter dropdown toggle
+  logServiceFilterBtn?.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!logServiceFilterDropdown) { return; }
+    const isOpen = logServiceFilterDropdown.style.display !== 'none';
+    // close other log dropdown
+    if (logLevelFilterDropdown) { logLevelFilterDropdown.style.display = 'none'; }
+    logServiceFilterDropdown.style.display = isOpen ? 'none' : 'block';
+  });
+    logTimeSortOrder = logTimeSortOrder === 'desc' ? 'asc' : 'desc';
+    if (logTimeSortIcon) { logTimeSortIcon.textContent = logTimeSortOrder === 'desc' ? '↓' : '↑'; }
+    logTimeSortBtn.classList.toggle('header-filter-btn--active', logTimeSortOrder === 'asc');
+    fetchLogs();
+  });
+
+  // Log service filter dropdown toggle
+  logServiceFilterBtn?.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!logServiceFilterDropdown) { return; }
+    const isOpen = logServiceFilterDropdown.style.display !== 'none';
+    logServiceFilterDropdown.style.display = isOpen ? 'none' : 'block';
+  });
+
+  // Log level filter dropdown toggle
+  logLevelFilterBtn?.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!logLevelFilterDropdown) { return; }
+    const isOpen = logLevelFilterDropdown.style.display !== 'none';
+    logLevelFilterDropdown.style.display = isOpen ? 'none' : 'block';
+  });
+
+  logLevelFilterDropdown?.querySelectorAll('.service-filter-option').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      selectedLogSeverity = parseInt(/** @type {HTMLElement} */ (btn).dataset['severity'] ?? '0', 10);
+      logLevelFilterDropdown.style.display = 'none';
+
+      // Update active state on options
+      logLevelFilterDropdown.querySelectorAll('.service-filter-option').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      // Update button label
+      const label = /** @type {HTMLElement} */ (btn).textContent ?? 'Level';
+      const icon = $('log-level-filter-icon');
+      if (logLevelFilterBtn) { logLevelFilterBtn.childNodes[0].textContent = (selectedLogSeverity === 0 ? 'Level' : label) + ' '; }
+      logLevelFilterBtn?.classList.toggle('header-filter-btn--active', selectedLogSeverity !== 0);
+      if (icon) { icon.textContent = '▾'; }
+
+      fetchLogs();
+    });
+  });
+
   logFilter?.addEventListener('input', fetchLogs);
   logFilter?.addEventListener('keydown', e => { if (e.key === 'Enter') { fetchLogs(); } });
 
@@ -195,9 +269,11 @@
     serviceFilterDropdown.style.display = isOpen ? 'none' : 'block';
   });
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   document.addEventListener('click', () => {
-    if (serviceFilterDropdown) { serviceFilterDropdown.style.display = 'none'; }
+    if (serviceFilterDropdown)    { serviceFilterDropdown.style.display = 'none'; }
+    if (logServiceFilterDropdown) { logServiceFilterDropdown.style.display = 'none'; }
+    if (logLevelFilterDropdown)   { logLevelFilterDropdown.style.display = 'none'; }
   });
 
   // ── Traces panel resize ───────────────────────────────────────────────────────
@@ -289,7 +365,8 @@
     switch (msg.type) {
       case 'status':   renderStatus(msg);                    break;
       case 'traces':   renderTraces(msg.data);               break;
-      case 'services': renderServices(msg.data);             break;
+      case 'services':    renderServices(msg.data);              break;
+      case 'logServices': renderLogServices(msg.data);           break;
       case 'spans':    renderSpans(msg.traceId, msg.data);   break;
       case 'metrics': renderMetrics(msg.data);              break;
       case 'logs':    renderLogs(msg.data);                 break;
@@ -322,28 +399,44 @@
   // ── Services dropdown ────────────────────────────────────────────────────────
   function renderServices(/** @type {string[]} */ services) {
     if (!serviceFilterDropdown || !serviceFilterBtn) { return; }
-
     const allServices = ['', ...services];
     serviceFilterDropdown.innerHTML = allServices.map(s => {
       const label    = s || 'All services';
       const isActive = s === selectedService;
       return `<button class="service-filter-option${isActive ? ' active' : ''}" data-value="${esc(s)}">${esc(label)}</button>`;
     }).join('');
-
     serviceFilterDropdown.querySelectorAll('.service-filter-option').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
         selectedService = /** @type {HTMLElement} */ (btn).dataset.value ?? '';
         serviceFilterDropdown.style.display = 'none';
-
-        // Update button label and active state
         const icon = $('service-filter-icon');
-        const label = selectedService || 'Service';
-        serviceFilterBtn.childNodes[0].textContent = label + ' ';
+        serviceFilterBtn.childNodes[0].textContent = (selectedService || 'Service') + ' ';
         serviceFilterBtn.classList.toggle('header-filter-btn--active', !!selectedService);
         if (icon) { icon.textContent = '▾'; }
-
         fetchTraces();
+      });
+    });
+  }
+
+  function renderLogServices(/** @type {string[]} */ services) {
+    if (!logServiceFilterDropdown || !logServiceFilterBtn) { return; }
+    const allServices = ['', ...services];
+    logServiceFilterDropdown.innerHTML = allServices.map(s => {
+      const label    = s || 'All services';
+      const isActive = s === selectedLogService;
+      return `<button class="service-filter-option${isActive ? ' active' : ''}" data-value="${esc(s)}">${esc(label)}</button>`;
+    }).join('');
+    logServiceFilterDropdown.querySelectorAll('.service-filter-option').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        selectedLogService = /** @type {HTMLElement} */ (btn).dataset.value ?? '';
+        logServiceFilterDropdown.style.display = 'none';
+        const icon = $('log-service-filter-icon');
+        logServiceFilterBtn.childNodes[0].textContent = (selectedLogService || 'Service') + ' ';
+        logServiceFilterBtn.classList.toggle('header-filter-btn--active', !!selectedLogService);
+        if (icon) { icon.textContent = '▾'; }
+        fetchLogs();
       });
     });
   }

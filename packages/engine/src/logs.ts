@@ -7,10 +7,12 @@ export interface LogQueryOptions {
   limit?: number;
   sinceNano?: string;
   untilNano?: string;
+  serviceName?: string;
+  sortOrder?: 'desc' | 'asc';
 }
 
 export function getLogs(db: QueryableDB, opts: LogQueryOptions = {}): LogRecord[] {
-  const { filter = '', excludes = [], minSeverity = 0, limit = 500, sinceNano, untilNano } = opts;
+  const { filter = '', excludes = [], minSeverity = 0, limit = 500, sinceNano, untilNano, serviceName, sortOrder = 'desc' } = opts;
 
   // severity_number 0 = UNSPECIFIED (often emitted as "TRACE" by SDKs).
   // Treat minSeverity 1 (Trace+) identically to 0 so those logs are included.
@@ -18,8 +20,9 @@ export function getLogs(db: QueryableDB, opts: LogQueryOptions = {}): LogRecord[
   const conditions: string[] = ['severity_number >= ?'];
   const params: unknown[]   = [effectiveMin];
 
-  if (sinceNano) { conditions.push('timestamp_unix_nano >= ?'); params.push(sinceNano); }
-  if (untilNano) { conditions.push('timestamp_unix_nano <= ?'); params.push(untilNano); }
+  if (sinceNano)    { conditions.push('timestamp_unix_nano >= ?'); params.push(sinceNano); }
+  if (untilNano)    { conditions.push('timestamp_unix_nano <= ?'); params.push(untilNano); }
+  if (serviceName)  { conditions.push('service_name = ?');         params.push(serviceName); }
 
   if (filter.trim()) {
     conditions.push('(body LIKE ? OR service_name LIKE ? OR severity_text LIKE ? OR attributes LIKE ? OR trace_id LIKE ? OR span_id LIKE ?)');
@@ -38,7 +41,7 @@ export function getLogs(db: QueryableDB, opts: LogQueryOptions = {}): LogRecord[
   const rows = db.prepare(`
     SELECT * FROM logs
     WHERE ${conditions.join(' AND ')}
-    ORDER BY timestamp_unix_nano DESC, id DESC
+    ORDER BY timestamp_unix_nano ${sortOrder === 'asc' ? 'ASC' : 'DESC'}, id ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
     LIMIT ?
   `).all(...params, limit);
 
