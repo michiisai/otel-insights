@@ -13,6 +13,13 @@
   --err:        var(--vscode-errorForeground,               #f44747);
   --warn-fg:    var(--vscode-editorWarning-foreground,      #cca700);
   --ok:         var(--vscode-testing-iconPassed,            #4ec9b0);
+  --traces-filters-bg: color-mix(in srgb, var(--bg-subtle) 88%, var(--bg));
+  --traces-context-bg: color-mix(in srgb, var(--bg-subtle) 78%, var(--bg));
+  --traces-header-bg:  color-mix(in srgb, var(--bg) 86%, #000);
+  --traces-list-bg:    var(--bg);
+  --traces-nested-bg:  color-mix(in srgb, var(--bg-subtle) 72%, var(--bg));
+  --traces-divider:    color-mix(in srgb, var(--border) 100%, transparent);
+  --traces-header-fg:  color-mix(in srgb, var(--fg) 88%, var(--fg-muted));
   --font:       var(--vscode-font-family,                   system-ui, sans-serif);
   --font-ui:    var(--vscode-font-family,                    system-ui, sans-serif);
   --font-mono:  var(--vscode-editor-font-family,            'Cascadia Code', monospace);
@@ -122,8 +129,8 @@ body {
   padding:     6px 8px;
   flex-shrink: 0;
   align-items: center;
-  border-bottom: 1px solid var(--border);
-  background:  var(--bg-subtle);
+  border-bottom: 1px solid var(--traces-divider);
+  background:  var(--traces-filters-bg);
 }
 
 .traces-filters input {
@@ -161,9 +168,9 @@ body {
   gap: 6px;
   margin: 6px 8px;
   padding: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--traces-divider);
   border-radius: 6px;
-  background: var(--bg);
+  background: var(--traces-context-bg);
 }
 .chat-selection-panel--empty .chat-selection-clear-btn { visibility: hidden; }
 
@@ -259,7 +266,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 3;
-  background: var(--bg-subtle);
+  background: var(--traces-filters-bg);
 }
 
 /* ── Resize divider ──────────────────────────────────────────────────── */
@@ -332,11 +339,12 @@ body {
 
 /* ── Waterfall chart ─────────────────────────────────────────────────── */
 .waterfall-container {
-  border:        1px solid var(--border);
+  border:        1px solid var(--traces-divider);
   border-top:    none;
   border-radius: 0 0 4px 4px;
   margin:        0 0 4px 0;
   padding:       4px 0 6px;
+  background:    var(--traces-nested-bg);
 }
 
 .waterfall-row {
@@ -410,6 +418,7 @@ body {
   gap:            4px;
   flex:           1;
   padding:        6px 6px 12px;
+  background:     var(--traces-list-bg);
 }
 
 .empty-state {
@@ -429,14 +438,15 @@ body {
   padding:        4px 17px;
   font-family:    var(--font);
   font-size:      11px;
-  font-weight:    600;
-  color:          var(--fg-muted);
-  border-bottom:  1px solid var(--border);
+  font-weight:    700;
+  color:          var(--traces-header-fg);
+  border-top:     1px solid var(--traces-divider);
+  border-bottom:  1px solid var(--traces-divider);
   flex-shrink:    0;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   user-select:    none;
-  background:     var(--bg-subtle);
+  background:     var(--traces-header-bg);
 }
 /* Header label cells should always use the UI font, not mono, and match header size */
 .traces-header .cell--ts,
@@ -608,7 +618,7 @@ body {
   color:          inherit;
   font:           inherit;
   font-size:      11px;
-  font-weight:    600;
+  font-weight:    700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   cursor:         pointer;
