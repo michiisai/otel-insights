@@ -155,6 +155,86 @@ body {
 .filter-toggle:hover          { color: var(--fg); border-color: var(--fg-muted); }
 .filter-toggle.active         { color: var(--err); border-color: var(--err); background: rgba(244,71,71,0.1); }
 
+.chat-selection-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.chat-selection-panel--empty .chat-selection-clear-btn { visibility: hidden; }
+
+.chat-selection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.chat-selection-clear-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 2px 7px;
+}
+.chat-selection-clear-btn:hover {
+  color: var(--fg);
+  border-color: var(--fg-muted);
+}
+
+.chat-selection-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chat-selection-empty {
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.chat-selection-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 7px;
+}
+
+.chat-selection-chip-label {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-selection-chip-remove {
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.chat-selection-chip-remove:hover {
+  color: var(--accent);
+}
+
 .traces-split {
   display:  flex;
   flex:     1;
@@ -169,6 +249,13 @@ body {
   display:        flex;
   flex-direction: column;
   min-width:      180px;
+}
+
+.traces-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-subtle);
 }
 
 /* ── Resize divider ──────────────────────────────────────────────────── */
@@ -345,6 +432,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   user-select:    none;
+  background:     var(--bg-subtle);
 }
 /* Header label cells should always use the UI font, not mono, and match header size */
 .traces-header .cell--ts,

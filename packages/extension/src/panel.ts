@@ -172,23 +172,34 @@ export class OtelInsightsPanel {
 
       <!-- Left: trace list + waterfall -->
       <div class="traces-left">
-        <div class="traces-filters">
-          <input  id="trace-search"   type="text" placeholder="Search traces…" />
-          <button id="trace-errors-btn" class="filter-toggle" title="Errors only">⚠ Errors</button>
-        </div>
-        <div class="traces-header" aria-hidden="true">
-          <span class="expand-icon"></span>
-          <span class="cell cell--name">Trace</span>
-          <span class="cell cell--service">
-            <button id="service-filter-btn" class="header-filter-btn" title="Filter by service">Service <span id="service-filter-icon" class="header-filter-icon">▾</span></button>
-            <div id="service-filter-dropdown" class="header-filter-dropdown" style="display:none"></div>
-          </span>
-          <span class="cell cell--ts">
-            <button id="time-sort-btn" class="header-filter-btn" title="Sort by time">Time <span id="time-sort-icon" class="header-filter-icon">↓</span></button>
-          </span>
-          <span class="cell cell--dur">Duration</span>
-          <span class="cell cell--spans">Spans</span>
-          <button class="add-to-chat-btn" style="visibility:hidden" aria-hidden="true" tabindex="-1">+ chat</button>
+        <div class="traces-sticky">
+          <div class="traces-filters">
+            <input  id="trace-search"   type="text" placeholder="Search traces…" />
+            <button id="trace-errors-btn" class="filter-toggle" title="Errors only">⚠ Errors</button>
+          </div>
+          <div id="chat-selection-panel" class="chat-selection-panel chat-selection-panel--empty">
+            <div class="chat-selection-header">
+              <span id="chat-selection-count">Chat selection (0)</span>
+              <button id="chat-selection-clear" class="chat-selection-clear-btn" title="Remove all selected traces/spans from chat">Clear</button>
+            </div>
+            <div id="chat-selection-list" class="chat-selection-list">
+              <span class="chat-selection-empty">No traces or spans added to chat.</span>
+            </div>
+          </div>
+          <div class="traces-header" aria-hidden="true">
+            <span class="expand-icon"></span>
+            <span class="cell cell--name">Trace</span>
+            <span class="cell cell--service">
+              <button id="service-filter-btn" class="header-filter-btn" title="Filter by service">Service <span id="service-filter-icon" class="header-filter-icon">▾</span></button>
+              <div id="service-filter-dropdown" class="header-filter-dropdown" style="display:none"></div>
+            </span>
+            <span class="cell cell--ts">
+              <button id="time-sort-btn" class="header-filter-btn" title="Sort by time">Time <span id="time-sort-icon" class="header-filter-icon">↓</span></button>
+            </span>
+            <span class="cell cell--dur">Duration</span>
+            <span class="cell cell--spans">Spans</span>
+            <button class="add-to-chat-btn" style="visibility:hidden" aria-hidden="true" tabindex="-1">+ chat</button>
+          </div>
         </div>
         <div id="traces-list" class="list-container">
           <div class="empty-state">Loading traces…</div>

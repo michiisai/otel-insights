@@ -23,6 +23,10 @@
   const refreshBtn     = $('refresh-btn');
   const clearBtn       = $('clear-btn');
   const tracesList     = $('traces-list');
+  const chatSelectionPanel = $('chat-selection-panel');
+  const chatSelectionCount = $('chat-selection-count');
+  const chatSelectionList  = $('chat-selection-list');
+  const chatSelectionClear = $('chat-selection-clear');
   const logsList       = $('logs-list');
   const logDetailPanel = $('log-detail-panel');
   const logFilter      = /** @type {HTMLInputElement}  */ ($('log-filter'));
@@ -178,6 +182,55 @@
 
   clearBtn?.addEventListener('click', () => {
     vscode.postMessage({ type: 'clearData' });
+  });
+  chatSelectionClear?.addEventListener('click', () => {
+    selectedTraceIds.clear();
+    selectedSpans.clear();
+    if (tracesList) {
+      tracesList.querySelectorAll('.add-to-chat-btn').forEach(btn => {
+        btn.textContent = '+ chat';
+        btn.classList.remove('add-to-chat-btn--selected');
+      });
+    }
+    if (currentSpanNode) {
+      const btn = $('span-detail-panel')?.querySelector('.add-to-chat-btn');
+      if (btn) {
+        btn.textContent = '+ chat';
+        btn.classList.remove('add-to-chat-btn--selected');
+      }
+    }
+    renderChatSelection();
+    syncAllToChat();
+  });
+  chatSelectionList?.addEventListener('click', e => {
+    const removeBtn = /** @type {HTMLElement} */ (e.target)?.closest('.chat-selection-chip-remove');
+    if (!removeBtn) { return; }
+    const chip = removeBtn.closest('[data-chat-kind][data-chat-id]');
+    if (!chip) { return; }
+    const kind = chip.dataset.chatKind;
+    const id = chip.dataset.chatId ?? '';
+    if (!id) { return; }
+
+    if (kind === 'trace') {
+      selectedTraceIds.delete(id);
+      const btn = tracesList?.querySelector(`.trace-row[data-id="${id}"] .add-to-chat-btn`);
+      if (btn) {
+        btn.textContent = '+ chat';
+        btn.classList.remove('add-to-chat-btn--selected');
+      }
+    } else if (kind === 'span') {
+      selectedSpans.delete(id);
+      if (currentSpanNode?.spanId === id) {
+        const btn = $('span-detail-panel')?.querySelector('.add-to-chat-btn');
+        if (btn) {
+          btn.textContent = '+ chat';
+          btn.classList.remove('add-to-chat-btn--selected');
+        }
+      }
+    }
+
+    renderChatSelection();
+    syncAllToChat();
   });
 
   // Log time sort toggle
@@ -355,7 +408,14 @@
       case 'spans':    renderSpans(msg.traceId, msg.data);   break;
       case 'metrics': renderMetrics(msg.data);              break;
       case 'logs':    renderLogs(msg.data);                 break;
-      case 'cleared': vscode.postMessage({ type: 'getServices' }); loadCurrentTab(); break;
+      case 'cleared':
+        selectedTraceIds.clear();
+        selectedSpans.clear();
+        traceDataMap = new Map();
+        renderChatSelection();
+        vscode.postMessage({ type: 'getServices' });
+        loadCurrentTab();
+        break;
       case 'navigateToTrace': navigateToTrace(msg.traceId, msg.spanId ?? null); break;
     }
   });
@@ -433,17 +493,63 @@
     vscode.postMessage({ type: 'addItemsToChat', traces, spans });
   }
 
+  /** @param {string} value @returns {string} */
+  function shortId(value) {
+    if (!value) { return ''; }
+    if (value.length <= 12) { return value; }
+    return `${value.slice(0, 6)}…${value.slice(-4)}`;
+  }
+
+  function renderChatSelection() {
+    if (!chatSelectionPanel || !chatSelectionList || !chatSelectionCount) { return; }
+
+    const traceItems = [...selectedTraceIds].map(id => {
+      const trace = traceDataMap.get(id);
+      return {
+        kind: 'trace',
+        id,
+        label: trace?.rootSpanName
+          ? `Trace: ${trace.rootSpanName} (${shortId(id)})`
+          : `Trace: ${shortId(id)}`,
+      };
+    });
+    const spanItems = [...selectedSpans.values()].map(span => ({
+      kind: 'span',
+      id: span.spanId,
+      label: span?.name
+        ? `Span: ${span.name} (${shortId(span.spanId)})`
+        : `Span: ${shortId(span.spanId)}`,
+    }));
+    const allItems = [...traceItems, ...spanItems];
+
+    chatSelectionCount.textContent = `Chat selection (${allItems.length})`;
+    chatSelectionPanel.classList.toggle('chat-selection-panel--empty', allItems.length === 0);
+    if (!allItems.length) {
+      chatSelectionList.innerHTML = '<span class="chat-selection-empty">No traces or spans added to chat.</span>';
+      return;
+    }
+
+    chatSelectionList.innerHTML = allItems.map(item => `
+      <span class="chat-selection-chip" data-chat-kind="${item.kind}" data-chat-id="${esc(item.id)}">
+        <span class="chat-selection-chip-label">${esc(item.label)}</span>
+        <button class="chat-selection-chip-remove" title="Remove from chat selection" aria-label="Remove from chat selection">✕</button>
+      </span>
+    `).join('');
+  }
+
   // ── Traces ────────────────────────────────────────────────────────────────────
   function renderTraces(/** @type {any[]} */ traces) {
     if (!tracesList) { return; }
     if (!traces.length) {
       tracesList.innerHTML = '<div class="empty-state">No traces yet.<br><small>Point your app\'s OTLP exporter at <code>http://127.0.0.1:4318</code></small></div>';
+      renderChatSelection();
       return;
     }
 
     traceDataMap = new Map(traces.map(t => [t.traceId, t]));
     // Re-render clears DOM buttons, so sync selectedTraceIds to only known traces
     for (const id of selectedTraceIds) { if (!traceDataMap.has(id)) { selectedTraceIds.delete(id); } }
+    renderChatSelection();
     tracesList.innerHTML = traces.map(t => {
       const isOpen     = expandedTraces.has(t.traceId);
       const isSelected = selectedTraceIds.has(t.traceId);
@@ -505,6 +611,7 @@
           btn.textContent = '✓ added';
           btn.classList.add('add-to-chat-btn--selected');
         }
+        renderChatSelection();
         syncAllToChat();
       });
     });
@@ -668,6 +775,7 @@
         selectedSpans.set(spanId, spanData);
         if (btn) { btn.textContent = '✓ added'; btn.classList.add('add-to-chat-btn--selected'); }
       }
+      renderChatSelection();
       syncAllToChat();
       return;
     }
@@ -1031,6 +1139,7 @@
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────────
+  renderChatSelection();
   vscode.postMessage({ type: 'ready' });
   vscode.postMessage({ type: 'getServices' });
   vscode.postMessage({ type: 'getTraces' });
