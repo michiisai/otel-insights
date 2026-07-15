@@ -522,17 +522,17 @@
     }));
     const allItems = [...traceItems, ...spanItems];
 
-    chatSelectionCount.textContent = `Chat selection (${allItems.length})`;
+    chatSelectionCount.textContent = `Chat Context (${allItems.length})`;
     chatSelectionPanel.classList.toggle('chat-selection-panel--empty', allItems.length === 0);
     if (!allItems.length) {
-      chatSelectionList.innerHTML = '<span class="chat-selection-empty">No traces or spans added to chat.</span>';
+      chatSelectionList.innerHTML = '<span class="chat-selection-empty">No traces or spans in chat context.</span>';
       return;
     }
 
     chatSelectionList.innerHTML = allItems.map(item => `
       <span class="chat-selection-chip" data-chat-kind="${item.kind}" data-chat-id="${esc(item.id)}">
         <span class="chat-selection-chip-label">${esc(item.label)}</span>
-        <button class="chat-selection-chip-remove" title="Remove from chat selection" aria-label="Remove from chat selection">✕</button>
+        <button class="chat-selection-chip-remove" title="Remove from chat context" aria-label="Remove from chat context">✕</button>
       </span>
     `).join('');
   }
