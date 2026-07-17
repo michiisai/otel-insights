@@ -118,11 +118,13 @@ export function getServiceSummary(db: QueryableDB, serviceName: string, sinceNan
       SUM(COALESCE(
         CAST(json_extract(attributes, '$."gen_ai.usage.input_tokens"')  AS REAL),
         CAST(json_extract(attributes, '$."llm.usage.prompt_tokens"')    AS REAL),
+        CAST(json_extract(attributes, '$."input_tokens"')               AS REAL),
         0
       )) AS prompt_tokens,
       SUM(COALESCE(
         CAST(json_extract(attributes, '$."gen_ai.usage.output_tokens"')     AS REAL),
         CAST(json_extract(attributes, '$."llm.usage.completion_tokens"')    AS REAL),
+        CAST(json_extract(attributes, '$."output_tokens"')                  AS REAL),
         0
       )) AS completion_tokens,
       COUNT(*) AS call_count

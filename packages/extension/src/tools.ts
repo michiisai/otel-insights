@@ -67,8 +67,8 @@ function aggregateTokens(spans: { attributes: Record<string, unknown> }[]): Toke
     const model = String(
       a['gen_ai.request.model'] ?? a['llm.model'] ?? ''
     );
-    const prompt = Number(a['gen_ai.usage.input_tokens'] ?? a['llm.usage.prompt_tokens'] ?? 0);
-    const completion = Number(a['gen_ai.usage.output_tokens'] ?? a['llm.usage.completion_tokens'] ?? 0);
+    const prompt = Number(a['gen_ai.usage.input_tokens'] ?? a['llm.usage.prompt_tokens'] ?? a['input_tokens'] ?? 0);
+    const completion = Number(a['gen_ai.usage.output_tokens'] ?? a['llm.usage.completion_tokens'] ?? a['output_tokens'] ?? 0);
 
     if (!model && prompt === 0 && completion === 0) { continue; }
 

@@ -27,7 +27,7 @@ Each package is independently compiled. `adapter-vscode` is bundled by esbuild w
 | Tab | What you get |
 |-----|-------------|
 | **Traces** | Expandable trace list → span tree with duration, kind badge, and error highlighting |
-| **Performance** | Latency · Token usage (`gen_ai.*` attributes) · Tool call stats |
+| **Performance** | Latency · Token usage (`gen_ai.*` + `llm.*`/bare-key fallbacks) · Tool call stats |
 | **Logs** | Severity-coloured log stream with free-text + severity filter |
 
 A status-bar item (`● :4318`) shows the receiver is live. Click it to open the panel.
@@ -60,10 +60,16 @@ For agent-specific attributes the Performance tab understands:
 
 | Attribute | Meaning |
 |-----------|---------|
-| `gen_ai.request.model` | Model name (token usage grouping) |
-| `gen_ai.usage.input_tokens` | Prompt tokens |
-| `gen_ai.usage.output_tokens` | Completion tokens |
-| `gen_ai.tool.name` | Tool name (tool call analysis) |
+| `gen_ai.request.model` (or `llm.model`) | Model name (token usage grouping) |
+| `gen_ai.usage.input_tokens` (or `llm.usage.prompt_tokens`, `input_tokens`) | Prompt tokens |
+| `gen_ai.usage.output_tokens` (or `llm.usage.completion_tokens`, `output_tokens`) | Completion tokens |
+| `gen_ai.usage.cache_read_input_tokens` (or `cache_read_tokens`) | Cache-hit tokens (served from cache) |
+| `gen_ai.usage.cache_creation_input_tokens` (or `cache_creation_tokens`) | Cache-write tokens (cost of populating the cache) |
+| `gen_ai.tool.name` (or `tool.name`, `tool_name`) | Tool name (tool call analysis) |
+
+Each row lists the OpenTelemetry GenAI semantic-convention key first, followed by
+the `llm.*` and bare-key fallbacks that harnesses such as Claude Code emit — all
+map onto the same metric.
 
 ## Commands
 

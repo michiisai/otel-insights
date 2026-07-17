@@ -60,6 +60,7 @@ export interface MetricsData {
     inputTokens: number;
     outputTokens: number;
     cachedTokens: number;
+    cacheCreationTokens: number;
     errorTraces: number;
     p95Ms: number;
   };

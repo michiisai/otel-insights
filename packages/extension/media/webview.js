@@ -950,6 +950,7 @@
           <div class="summary-item"><span class="summary-val">${fmtNum(s.outputTokens)}</span><span class="summary-lbl">Output</span></div>
           <div class="summary-item"><span class="summary-val">${fmtNum(totalTokens)}</span><span class="summary-lbl">Total</span></div>
           <div class="summary-item"><span class="summary-val">${fmtNum(s.cachedTokens)}</span><span class="summary-lbl">Cache Hits</span></div>
+          <div class="summary-item"><span class="summary-val">${fmtNum(s.cacheCreationTokens)}</span><span class="summary-lbl">Cache Writes</span></div>
           <div class="summary-item"><span class="summary-val">${cacheHitPct}</span><span class="summary-lbl">Cache Hit %</span></div>
         </div>
       </div>

@@ -43,11 +43,13 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
       SUM(COALESCE(
         CAST(json_extract(attributes, '$."gen_ai.usage.input_tokens"')   AS REAL),
         CAST(json_extract(attributes, '$."llm.usage.prompt_tokens"')     AS REAL),
+        CAST(json_extract(attributes, '$."input_tokens"')                AS REAL),
         0
       )) AS prompt_tokens,
       SUM(COALESCE(
         CAST(json_extract(attributes, '$."gen_ai.usage.output_tokens"')      AS REAL),
         CAST(json_extract(attributes, '$."llm.usage.completion_tokens"')     AS REAL),
+        CAST(json_extract(attributes, '$."output_tokens"')                   AS REAL),
         0
       )) AS completion_tokens,
       COUNT(*) AS call_count
@@ -106,6 +108,7 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
         CAST(json_extract(attributes, '$."gen_ai.usage.cached_tokens"')           AS REAL),
         CAST(json_extract(attributes, '$."llm.usage.cache_read_input_tokens"')    AS REAL),
         CAST(json_extract(attributes, '$."llm.usage.cached_tokens"')              AS REAL),
+        CAST(json_extract(attributes, '$."cache_read_tokens"')                    AS REAL),
         0
       )) AS cached_tokens
     FROM spans
@@ -115,9 +118,31 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
       OR json_extract(attributes, '$."gen_ai.usage.cached_tokens"')           IS NOT NULL
       OR json_extract(attributes, '$."llm.usage.cache_read_input_tokens"')    IS NOT NULL
       OR json_extract(attributes, '$."llm.usage.cached_tokens"')              IS NOT NULL
+      OR json_extract(attributes, '$."cache_read_tokens"')                    IS NOT NULL
     )
   `).get(...spanParams);
   const cachedTokens = Math.round(Number(cachedRow?.['cached_tokens'] ?? 0));
+
+  // Cache creation (write) tokens — the cost of populating the cache. Tracked
+  // separately from cache hits because it is an input write cost, not a hit.
+  const cacheCreationRow = db.prepare(`
+    SELECT
+      SUM(COALESCE(
+        CAST(json_extract(attributes, '$."gen_ai.usage.cache_creation.input_tokens"') AS REAL),
+        CAST(json_extract(attributes, '$."gen_ai.usage.cache_creation_input_tokens"') AS REAL),
+        CAST(json_extract(attributes, '$."llm.usage.cache_creation_input_tokens"')    AS REAL),
+        CAST(json_extract(attributes, '$."cache_creation_tokens"')                    AS REAL),
+        0
+      )) AS cache_creation_tokens
+    FROM spans
+    ${cachedAndClause} (
+      json_extract(attributes, '$."gen_ai.usage.cache_creation.input_tokens"') IS NOT NULL
+      OR json_extract(attributes, '$."gen_ai.usage.cache_creation_input_tokens"') IS NOT NULL
+      OR json_extract(attributes, '$."llm.usage.cache_creation_input_tokens"')    IS NOT NULL
+      OR json_extract(attributes, '$."cache_creation_tokens"')                    IS NOT NULL
+    )
+  `).get(...spanParams);
+  const cacheCreationTokens = Math.round(Number(cacheCreationRow?.['cache_creation_tokens'] ?? 0));
 
   // P95 latency from root spans only
   const rootDurRows = db.prepare(`
@@ -184,6 +209,7 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
       inputTokens,
       outputTokens,
       cachedTokens,
+      cacheCreationTokens,
       errorTraces:       Number(summary?.['error_traces']        ?? 0),
       p95Ms,
     },
