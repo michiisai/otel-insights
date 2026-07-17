@@ -168,7 +168,7 @@ class GetAgentMetricsTool implements vscode.LanguageModelTool<{ since?: string; 
   ): Promise<vscode.LanguageModelToolResult> {
     const sinceNano = parseSinceNano(options.input.since);
     const untilNano = parseUntilNano(options.input.until);
-    const { tokenUsage, toolCalls } = getMetricsData(this.store.getDb(), sinceNano ?? undefined, untilNano ?? undefined);
+    const { tokenUsage, toolCalls, summary } = getMetricsData(this.store.getDb(), sinceNano ?? undefined, untilNano ?? undefined);
 
     const hasTokens = tokenUsage.length > 0;
     const hasTools  = toolCalls.length > 0;
@@ -203,6 +203,13 @@ class GetAgentMetricsTool implements vscode.LanguageModelTool<{ since?: string; 
       lines.push(`| total tokens | ${totalTokens.toLocaleString()} |`);
       lines.push(`| input tokens | ${totalInput.toLocaleString()} |`);
       lines.push(`| output tokens | ${totalOutput.toLocaleString()} |`);
+      if (summary.cachedTokens > 0 || summary.cacheCreationTokens > 0) {
+        const cacheHitPct = summary.cacheHitRate >= 0
+          ? ` (${(summary.cacheHitRate * 100).toFixed(1)}% hit rate)`
+          : '';
+        lines.push(`| cache hits (read) | ${summary.cachedTokens.toLocaleString()}${cacheHitPct} |`);
+        lines.push(`| cache writes (creation) | ${summary.cacheCreationTokens.toLocaleString()} |`);
+      }
       lines.push(`| llm calls | ${totalLLMCalls} |`);
       lines.push(`| models | ${models} |`);
     }

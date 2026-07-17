@@ -144,6 +144,56 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
   `).get(...spanParams);
   const cacheCreationTokens = Math.round(Number(cacheCreationRow?.['cache_creation_tokens'] ?? 0));
 
+  // Convention-aware cache-hit rate. Two accounting models coexist:
+  //   - Standard/OTel semconv (e.g. Copilot): input_tokens is the TOTAL prompt and
+  //     cache_read is a subset of it → denominator = input_tokens.
+  //   - Claude Code/Anthropic: input_tokens counts only fresh (uncached) tokens and
+  //     cache_read/cache_creation are additive → denominator = input + read + creation.
+  // Anthropic-style spans are detected by the bare cache_read_tokens / cache_creation_tokens keys.
+  const rateWhere = spanWhere ? `${spanWhere} AND` : 'WHERE';
+  const hitRateRow = db.prepare(`
+    SELECT
+      SUM(read_tok) AS read_total,
+      SUM(CASE WHEN is_additive THEN input_tok + read_tok + creation_tok ELSE input_tok END) AS prompt_total
+    FROM (
+      SELECT
+        COALESCE(
+          CAST(json_extract(attributes, '$."gen_ai.usage.input_tokens"') AS REAL),
+          CAST(json_extract(attributes, '$."llm.usage.prompt_tokens"')   AS REAL),
+          CAST(json_extract(attributes, '$."input_tokens"')              AS REAL),
+          0
+        ) AS input_tok,
+        COALESCE(
+          CAST(json_extract(attributes, '$."gen_ai.usage.cache_read.input_tokens"') AS REAL),
+          CAST(json_extract(attributes, '$."gen_ai.usage.cache_read_input_tokens"') AS REAL),
+          CAST(json_extract(attributes, '$."gen_ai.usage.cached_tokens"')           AS REAL),
+          CAST(json_extract(attributes, '$."llm.usage.cache_read_input_tokens"')    AS REAL),
+          CAST(json_extract(attributes, '$."llm.usage.cached_tokens"')              AS REAL),
+          CAST(json_extract(attributes, '$."cache_read_tokens"')                    AS REAL),
+          0
+        ) AS read_tok,
+        COALESCE(
+          CAST(json_extract(attributes, '$."gen_ai.usage.cache_creation.input_tokens"') AS REAL),
+          CAST(json_extract(attributes, '$."gen_ai.usage.cache_creation_input_tokens"') AS REAL),
+          CAST(json_extract(attributes, '$."llm.usage.cache_creation_input_tokens"')    AS REAL),
+          CAST(json_extract(attributes, '$."cache_creation_tokens"')                    AS REAL),
+          0
+        ) AS creation_tok,
+        (
+          json_extract(attributes, '$."cache_read_tokens"')     IS NOT NULL
+          OR json_extract(attributes, '$."cache_creation_tokens"') IS NOT NULL
+        ) AS is_additive
+      FROM spans
+      ${rateWhere} (
+        json_extract(attributes, '$."gen_ai.request.model"') IS NOT NULL
+        OR json_extract(attributes, '$."llm.model"')         IS NOT NULL
+      )
+    )
+  `).get(...spanParams);
+  const cacheReadTotal   = Number(hitRateRow?.['read_total']   ?? 0);
+  const cachePromptTotal = Number(hitRateRow?.['prompt_total'] ?? 0);
+  const cacheHitRate = cachePromptTotal > 0 ? cacheReadTotal / cachePromptTotal : -1;
+
   // P95 latency from root spans only
   const rootDurRows = db.prepare(`
     SELECT duration_ms FROM spans
@@ -210,6 +260,7 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
       outputTokens,
       cachedTokens,
       cacheCreationTokens,
+      cacheHitRate,
       errorTraces:       Number(summary?.['error_traces']        ?? 0),
       p95Ms,
     },

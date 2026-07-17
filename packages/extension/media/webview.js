@@ -925,12 +925,11 @@
     const errorRate = s.totalTraces > 0
       ? `${Math.round(s.errorTraces / s.totalTraces * 100)}%`
       : '–';
-
-    // Per OTel GenAI semconv, input_tokens already includes cache_read tokens.
-    // Total = input + output only; cached is a subset of input, not additive.
+      
+    // cacheHitRate is computed convention-aware in the engine (-1 when unavailable).
     const totalTokens   = s.inputTokens + s.outputTokens;
-    const cacheHitPct   = s.inputTokens > 0
-      ? `${Math.round(s.cachedTokens / s.inputTokens * 100)}%`
+    const cacheHitPct   = s.cacheHitRate >= 0
+      ? `${Math.round(s.cacheHitRate * 100)}%`
       : '–';
 
     el.innerHTML = `

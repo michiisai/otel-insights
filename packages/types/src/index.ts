@@ -61,6 +61,13 @@ export interface MetricsData {
     outputTokens: number;
     cachedTokens: number;
     cacheCreationTokens: number;
+    /**
+     * Fraction of prompt tokens served from cache, computed with convention-aware denominators:
+     *   - Standard/OTel semconv: cache_read is a subset of input_tokens → read / input
+     *   - Claude Code/Anthropic: cache_read is additive → read / (input + read + creation)
+     * -1 when there is no prompt data to compute a rate.
+     */
+    cacheHitRate: number;
     errorTraces: number;
     p95Ms: number;
   };
