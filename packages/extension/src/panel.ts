@@ -234,7 +234,7 @@ export class OtelInsightsPanel {
       </section>
 
       <section class="card">
-        <h3 class="card-title">🐢 Slowest Operations</h3>
+        <h3 class="card-title">⏱️ Latency</h3>
         <div id="slowest-ops"></div>
       </section>
 

@@ -269,7 +269,7 @@ class GetSlowestSpansTool implements vscode.LanguageModelTool<GetSlowestSpansInp
       ]);
     }
 
-    const lines: string[] = [`# Slowest Operations (by average duration)\n`];
+    const lines: string[] = [`# Latency (by average duration)\n`];
 
     ops.forEach((op, i) => {
       const errorPct = op.count > 0 ? ((op.errorCount / op.count) * 100).toFixed(1) : '0.0';
@@ -519,7 +519,7 @@ class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummar
     lines.push('');
 
     if (summary.slowestOperations.length) {
-      lines.push('## Slowest Operations');
+      lines.push('## Latency');
       lines.push('| # | Operation | Avg | Max | Calls | Errors |');
       lines.push('|---|---|---|---|---|---|');
       summary.slowestOperations.forEach((op, i) => {

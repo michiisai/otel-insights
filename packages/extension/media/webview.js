@@ -88,7 +88,7 @@
   });
 
   function loadCurrentTab() {
-    if (activeTab === 'traces')           { fetchTraces(); }
+    if (activeTab === 'traces')           { vscode.postMessage({ type: 'getServices' }); fetchTraces(); }
     else if (activeTab === 'performance') { vscode.postMessage({ type: 'getMetrics' }); }
     else if (activeTab === 'logs')        { vscode.postMessage({ type: 'getLogServices' }); fetchLogs(); }
   }

@@ -27,7 +27,7 @@ Each package is independently compiled. `adapter-vscode` is bundled by esbuild w
 | Tab | What you get |
 |-----|-------------|
 | **Traces** | Expandable trace list → span tree with duration, kind badge, and error highlighting |
-| **Performance** | Slowest operations · Token usage (`gen_ai.*` attributes) · Tool call stats |
+| **Performance** | Latency · Token usage (`gen_ai.*` attributes) · Tool call stats |
 | **Logs** | Severity-coloured log stream with free-text + severity filter |
 
 A status-bar item (`● :4318`) shows the receiver is live. Click it to open the panel.
