@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.vsix
+*.vsix.zip
 *.js.map
 .vscode-test/
 out/
