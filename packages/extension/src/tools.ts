@@ -13,6 +13,69 @@ import {
   type GetTracesOptions,
 } from '@otel-insights/engine';
 
+// Upper bound on how long a single tool invocation may run before it is aborted.
+// A long-running or never-resolving tool call is what surfaces to an IDE-integrated
+// client (e.g. Claude Code) as a hung request / "permission stream closed" — so we
+// guarantee every invoke() settles quickly with a result instead of hanging.
+const TOOL_TIMEOUT_MS = 15_000;
+
+function textResult(text: string): vscode.LanguageModelToolResult {
+  return new vscode.LanguageModelToolResult([new vscode.LanguageModelTextPart(text)]);
+}
+
+/**
+ * Runs a tool's work with three guarantees, so a tool call can never hang or reject:
+ *   1. Cancellation — resolves promptly if the caller cancels (before or during the call).
+ *   2. Timeout — resolves with an explanatory message if work exceeds TOOL_TIMEOUT_MS.
+ *   3. Error isolation — a thrown error becomes a text result instead of a rejected promise.
+ *
+ * Note: the underlying SQLite queries are synchronous, so the timeout cannot preempt a
+ * single in-flight query mid-execution; it bounds any awaited work and, together with the
+ * try/catch, ensures invoke() always settles with a LanguageModelToolResult.
+ */
+async function executeTool(
+  toolName: string,
+  token: vscode.CancellationToken,
+  work: () => vscode.LanguageModelToolResult | Promise<vscode.LanguageModelToolResult>,
+): Promise<vscode.LanguageModelToolResult> {
+  if (token.isCancellationRequested) {
+    return textResult(`Tool "${toolName}" was cancelled before it started.`);
+  }
+
+  return new Promise<vscode.LanguageModelToolResult>((resolve) => {
+    let settled = false;
+    const finish = (result: vscode.LanguageModelToolResult): void => {
+      if (settled) { return; }
+      settled = true;
+      clearTimeout(timer);
+      cancelSub.dispose();
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      finish(textResult(
+        `Tool "${toolName}" timed out after ${TOOL_TIMEOUT_MS / 1000}s and was aborted. ` +
+        `The telemetry store may be very large or busy — try narrowing the time window ` +
+        `(since/until) or lowering the limit.`,
+      ));
+    }, TOOL_TIMEOUT_MS);
+
+    const cancelSub = token.onCancellationRequested(() => {
+      finish(textResult(`Tool "${toolName}" was cancelled.`));
+    });
+
+    // Defer to a microtask so the timer/cancel subscription are registered before work runs.
+    Promise.resolve()
+      .then(work)
+      .then(finish)
+      .catch((err: unknown) => {
+        finish(textResult(
+          `Tool "${toolName}" failed: ${err instanceof Error ? err.message : String(err)}`,
+        ));
+      });
+  });
+}
+
 // Generates a markdown URI link that opens the OTel Insights panel at a specific trace/span.
 // Uses vscode.env.uriScheme so the link works in both stable ("vscode") and Insiders ("vscode-insiders") builds.
 function traceDeeplink(traceId: string, spanId?: string, label?: string): string {
@@ -55,7 +118,34 @@ interface TokenSummary {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cachedTokens: number;
+  cacheCreationTokens: number;
   callCount: number;
+}
+
+// Attribute-key precedence mirrors the SQL COALESCE chains in engine/src/metrics.ts.
+const INPUT_TOKEN_KEYS = ['gen_ai.usage.input_tokens', 'llm.usage.prompt_tokens', 'input_tokens'];
+const CACHE_READ_KEYS = [
+  'gen_ai.usage.cache_read.input_tokens',
+  'gen_ai.usage.cache_read_input_tokens',
+  'gen_ai.usage.cached_tokens',
+  'llm.usage.cache_read_input_tokens',
+  'llm.usage.cached_tokens',
+  'cache_read_tokens',
+];
+const CACHE_CREATION_KEYS = [
+  'gen_ai.usage.cache_creation.input_tokens',
+  'gen_ai.usage.cache_creation_input_tokens',
+  'llm.usage.cache_creation_input_tokens',
+  'cache_creation_tokens',
+];
+
+/** First present (non-null) attribute value among `keys`, coerced to a number. */
+function firstNum(a: Record<string, unknown>, keys: string[]): number {
+  for (const k of keys) {
+    if (a[k] != null) { return Number(a[k]) || 0; }
+  }
+  return 0;
 }
 
 /** Aggregate gen_ai / llm token attributes across a set of spans, grouped by model. */
@@ -69,28 +159,57 @@ function aggregateTokens(spans: { attributes: Record<string, unknown> }[]): Toke
     );
     const prompt = Number(a['gen_ai.usage.input_tokens'] ?? a['llm.usage.prompt_tokens'] ?? a['input_tokens'] ?? 0);
     const completion = Number(a['gen_ai.usage.output_tokens'] ?? a['llm.usage.completion_tokens'] ?? a['output_tokens'] ?? 0);
+    const cacheRead = firstNum(a, CACHE_READ_KEYS);
+    const cacheCreation = firstNum(a, CACHE_CREATION_KEYS);
 
     if (!model && prompt === 0 && completion === 0) { continue; }
 
     const key = model || 'unknown';
     const existing = byModel.get(key);
     if (existing) {
-      existing.promptTokens     += prompt;
-      existing.completionTokens += completion;
-      existing.totalTokens      += prompt + completion;
-      existing.callCount        += 1;
+      existing.promptTokens        += prompt;
+      existing.completionTokens    += completion;
+      existing.totalTokens         += prompt + completion;
+      existing.cachedTokens        += cacheRead;
+      existing.cacheCreationTokens += cacheCreation;
+      existing.callCount           += 1;
     } else {
       byModel.set(key, {
         model: key,
-        promptTokens:     prompt,
-        completionTokens: completion,
-        totalTokens:      prompt + completion,
-        callCount:        1,
+        promptTokens:        prompt,
+        completionTokens:    completion,
+        totalTokens:         prompt + completion,
+        cachedTokens:        cacheRead,
+        cacheCreationTokens: cacheCreation,
+        callCount:           1,
       });
     }
   }
 
   return [...byModel.values()].sort((a, b) => b.totalTokens - a.totalTokens);
+}
+
+/**
+ * Convention-aware cache-hit rate for a set of spans (mirrors engine/src/metrics.ts).
+ *    - Standard/OTel semconv: input_tokens is the TOTAL prompt, cache_read a subset → denom = input.
+ *    - Anthropic/Claude Code: input_tokens is only fresh tokens, cache_read/creation are additive →
+ *      denom = input + read + creation. Detected by the bare cache_read_tokens/cache_creation_tokens keys.
+ * Returns -1 when there is no prompt volume to divide by.
+ */
+function traceCacheHitRate(spans: { attributes: Record<string, unknown> }[]): number {
+  let readTotal = 0;
+  let promptTotal = 0;
+  for (const s of spans) {
+    const a = s.attributes;
+    if (a['gen_ai.request.model'] == null && a['llm.model'] == null) { continue; }
+    const input = firstNum(a, INPUT_TOKEN_KEYS);
+    const read = firstNum(a, CACHE_READ_KEYS);
+    const creation = firstNum(a, CACHE_CREATION_KEYS);
+    const isAdditive = a['cache_read_tokens'] != null || a['cache_creation_tokens'] != null;
+    readTotal += read;
+    promptTotal += isAdditive ? input + read + creation : input;
+  }
+  return promptTotal > 0 ? readTotal / promptTotal : -1;
 }
 
 
@@ -105,8 +224,14 @@ class FindRecentErrorsTool implements vscode.LanguageModelTool<FindRecentErrorsI
 
   async invoke(
     options: vscode.LanguageModelToolInvocationOptions<FindRecentErrorsInput>,
-    _token: vscode.CancellationToken,
+    token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
+    return executeTool('findRecentErrors', token, () => this.run(options));
+  }
+
+  private run(
+    options: vscode.LanguageModelToolInvocationOptions<FindRecentErrorsInput>,
+  ): vscode.LanguageModelToolResult {
     const limit = options.input.limit ?? 5;
     const sinceNano = parseSinceNano(options.input.since);
     const untilNano = parseUntilNano(options.input.until);
@@ -164,8 +289,14 @@ class GetAgentMetricsTool implements vscode.LanguageModelTool<{ since?: string; 
 
   async invoke(
     options: vscode.LanguageModelToolInvocationOptions<{ since?: string; until?: string }>,
-    _token: vscode.CancellationToken,
+    token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
+    return executeTool('getAgentMetrics', token, () => this.run(options));
+  }
+
+  private run(
+    options: vscode.LanguageModelToolInvocationOptions<{ since?: string; until?: string }>,
+  ): vscode.LanguageModelToolResult {
     const sinceNano = parseSinceNano(options.input.since);
     const untilNano = parseUntilNano(options.input.until);
     const { tokenUsage, toolCalls, summary } = getMetricsData(this.store.getDb(), sinceNano ?? undefined, untilNano ?? undefined);
@@ -262,8 +393,14 @@ class GetSlowestSpansTool implements vscode.LanguageModelTool<GetSlowestSpansInp
 
   async invoke(
     options: vscode.LanguageModelToolInvocationOptions<GetSlowestSpansInput>,
-    _token: vscode.CancellationToken,
+    token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
+    return executeTool('getSlowestSpans', token, () => this.run(options));
+  }
+
+  private run(
+    options: vscode.LanguageModelToolInvocationOptions<GetSlowestSpansInput>,
+  ): vscode.LanguageModelToolResult {
     const limit = options.input.limit ?? 10;
     const sinceNano = parseSinceNano(options.input.since);
     const untilNano = parseUntilNano(options.input.until);
@@ -304,8 +441,14 @@ class SearchLogsTool implements vscode.LanguageModelTool<SearchLogsInput> {
 
   async invoke(
     options: vscode.LanguageModelToolInvocationOptions<SearchLogsInput>,
-    _token: vscode.CancellationToken,
+    token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
+    return executeTool('searchLogs', token, () => this.run(options));
+  }
+
+  private run(
+    options: vscode.LanguageModelToolInvocationOptions<SearchLogsInput>,
+  ): vscode.LanguageModelToolResult {
     const { query = '', minSeverity = 0, limit = 50 } = options.input;
     const sinceNano = parseSinceNano(options.input.since);
     const untilNano = parseUntilNano(options.input.until);
@@ -341,8 +484,14 @@ class SummarizeRecentActivityTool implements vscode.LanguageModelTool<{ since?: 
 
   async invoke(
     options: vscode.LanguageModelToolInvocationOptions<{ since?: string; until?: string }>,
-    _token: vscode.CancellationToken,
+    token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
+    return executeTool('summarizeRecentActivity', token, () => this.run(options));
+  }
+
+  private run(
+    options: vscode.LanguageModelToolInvocationOptions<{ since?: string; until?: string }>,
+  ): vscode.LanguageModelToolResult {
     const db = this.store.getDb();
     const sinceNano = parseSinceNano(options.input.since);
     const untilNano = parseUntilNano(options.input.until);
@@ -446,8 +595,14 @@ class GetServiceSummaryTool implements vscode.LanguageModelTool<GetServiceSummar
 
   async invoke(
     options: vscode.LanguageModelToolInvocationOptions<GetServiceSummaryInput>,
-    _token: vscode.CancellationToken,
+    token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
+    return executeTool('getServiceSummary', token, () => this.run(options));
+  }
+
+  private run(
+    options: vscode.LanguageModelToolInvocationOptions<GetServiceSummaryInput>,
+  ): vscode.LanguageModelToolResult {
     const db = this.store.getDb();
     const { serviceName } = options.input;
     const sinceNano = parseSinceNano(options.input.since);
@@ -579,8 +734,14 @@ class ListTracesTool implements vscode.LanguageModelTool<ListTracesInput> {
 
   async invoke(
     options: vscode.LanguageModelToolInvocationOptions<ListTracesInput>,
-    _token: vscode.CancellationToken,
+    token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
+    return executeTool('listTraces', token, () => this.run(options));
+  }
+
+  private run(
+    options: vscode.LanguageModelToolInvocationOptions<ListTracesInput>,
+  ): vscode.LanguageModelToolResult {
     const { serviceName, errorsOnly = false, attributeKey, attributeValue } = options.input;
     const limit     = options.input.limit ?? 20;
     const sinceNano = parseSinceNano(options.input.since);
@@ -662,8 +823,14 @@ class GetTraceTool implements vscode.LanguageModelTool<GetTraceInput> {
 
   async invoke(
     options: vscode.LanguageModelToolInvocationOptions<GetTraceInput>,
-    _token: vscode.CancellationToken,
+    token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
+    return executeTool('getTrace', token, () => this.run(options));
+  }
+
+  private run(
+    options: vscode.LanguageModelToolInvocationOptions<GetTraceInput>,
+  ): vscode.LanguageModelToolResult {
     const { traceId } = options.input;
     if (!traceId?.trim()) {
       return new vscode.LanguageModelToolResult([
@@ -688,7 +855,10 @@ class GetTraceTool implements vscode.LanguageModelTool<GetTraceInput> {
     const totalTokens  = tokensByModel.reduce((s, t) => s + t.totalTokens, 0);
     const totalInput   = tokensByModel.reduce((s, t) => s + t.promptTokens, 0);
     const totalOutput  = tokensByModel.reduce((s, t) => s + t.completionTokens, 0);
+    const totalCached  = tokensByModel.reduce((s, t) => s + t.cachedTokens, 0);
+    const totalCacheCreation = tokensByModel.reduce((s, t) => s + t.cacheCreationTokens, 0);
     const totalLLMCalls = tokensByModel.reduce((s, t) => s + t.callCount, 0);
+    const cacheHitRate = traceCacheHitRate(spans);
     const models = tokensByModel.map(t => t.model).join(', ');
 
     const lines: string[] = [
@@ -709,6 +879,10 @@ class GetTraceTool implements vscode.LanguageModelTool<GetTraceInput> {
         `| total tokens | ${totalTokens.toLocaleString()} |`,
         `| input tokens | ${totalInput.toLocaleString()} |`,
         `| output tokens | ${totalOutput.toLocaleString()} |`,
+        ...(totalCached > 0 || totalCacheCreation > 0 ? [
+          `| cache hits (read) | ${totalCached.toLocaleString()}${cacheHitRate >= 0 ? ` (${(cacheHitRate * 100).toFixed(1)}% hit rate)` : ''} |`,
+          `| cache writes (creation) | ${totalCacheCreation.toLocaleString()} |`,
+        ] : []),
         `| llm calls | ${totalLLMCalls} |`,
         `| models | ${models} |`,
       ] : []),
@@ -718,11 +892,20 @@ class GetTraceTool implements vscode.LanguageModelTool<GetTraceInput> {
     ];
 
     if (tokensByModel.length > 1) {
+      const anyCache = tokensByModel.some(t => t.cachedTokens > 0 || t.cacheCreationTokens > 0);
       lines.push('### Token Breakdown by Model');
-      lines.push('| Model | Total | Input | Output | Calls |');
-      lines.push('|---|---|---|---|---|');
-      for (const t of tokensByModel) {
-        lines.push(`| ${t.model} | ${t.totalTokens.toLocaleString()} | ${t.promptTokens.toLocaleString()} | ${t.completionTokens.toLocaleString()} | ${t.callCount} |`);
+      if (anyCache) {
+        lines.push('| Model | Total | Input | Output | Cache Read | Cache Write | Calls |');
+        lines.push('|---|---|---|---|---|---|---|');
+        for (const t of tokensByModel) {
+          lines.push(`| ${t.model} | ${t.totalTokens.toLocaleString()} | ${t.promptTokens.toLocaleString()} | ${t.completionTokens.toLocaleString()} | ${t.cachedTokens.toLocaleString()} | ${t.cacheCreationTokens.toLocaleString()} | ${t.callCount} |`);
+        }
+      } else {
+        lines.push('| Model | Total | Input | Output | Calls |');
+        lines.push('|---|---|---|---|---|');
+        for (const t of tokensByModel) {
+          lines.push(`| ${t.model} | ${t.totalTokens.toLocaleString()} | ${t.promptTokens.toLocaleString()} | ${t.completionTokens.toLocaleString()} | ${t.callCount} |`);
+        }
       }
       lines.push('');
     }
