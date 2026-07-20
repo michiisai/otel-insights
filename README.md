@@ -14,23 +14,41 @@ Explore trace trees, inspect tool calls, identify slow operations, correlate log
 ```
 otel-insights/
 ├── packages/
-│   ├── types          — shared TypeScript interfaces (Span, Trace, LogRecord, …)
-│   ├── receiver       — OTLP/HTTP receiver + sql.js (WASM) SQLite store
-│   ├── engine         — query layer (traces, metrics, logs analysis)
-│   └── adapter-vscode — VS Code extension: activates receiver, hosts webview UI
+│   ├── types      — shared TypeScript interfaces (Span, Trace, LogRecord, …)
+│   ├── receiver   — OTLP/HTTP receiver + sql.js (WASM) SQLite store
+│   ├── engine     — query layer (traces, metrics, logs analysis)
+│   └── extension  — VS Code extension: activates receiver, hosts webview UI,
+│                    and exposes Copilot Chat tools + chat skill
 ```
 
-Each package is independently compiled. `adapter-vscode` is bundled by esbuild with `sql.js` kept external so the WASM loader can find its `.wasm` file at runtime.
+Each package is independently compiled. `extension` is bundled by esbuild with `sql.js` kept external so the WASM loader can find its `.wasm` file at runtime.
 
 ## Features
 
 | Tab | What you get |
 |-----|-------------|
-| **Traces** | Expandable trace list → span tree with duration, kind badge, and error highlighting |
-| **Performance** | Latency · Token usage (`gen_ai.*` + `llm.*`/bare-key fallbacks) · Tool call stats |
+| **Traces** | Expandable trace list → span tree with duration, kind badge, error highlighting, and a timeline / waterfall view |
+| **Performance** | Latency (p95) · Token usage (`gen_ai.*` + `llm.*`/bare-key fallbacks) · Prompt-cache hit rate & cache read/write tokens · Tool call stats |
 | **Logs** | Severity-coloured log stream with free-text + severity filter |
 
 A status-bar item (`● :4318`) shows the receiver is live. Click it to open the panel.
+
+## Copilot Chat integration
+
+The extension surfaces its telemetry to AI agents through **VS Code language-model tools** and a bundled **chat skill** ([`skills/SKILL.md`](packages/extension/skills/SKILL.md)), so you can investigate telemetry conversationally in Copilot Chat instead of clicking through the UI.
+
+| Tool (`#`-reference) | What it does |
+|----------------------|--------------|
+| `#otelTraces` (List Traces) | Recent traces with service/time/error/attribute filters |
+| `#otelSpans` (Get Trace Details) | Full span tree for a given traceId |
+| `#otelService` (Service / Agent Summary) | Per-service profile: error rate, p50/p95, slow ops, tokens, tool calls — great for comparing two agents |
+| `#otelSummary` (Summarize Recent Activity) | High-level health overview (counts, error rate, p95, tokens) |
+| `#otelErrors` (Find Recent Errors) | Most recent error traces with exception details |
+| `#otelSlow` (Get Slowest Spans) | Slowest operations by average duration |
+| `#otelLogs` (Search Logs) | Keyword/severity search across logs |
+| `#otelAgentMetrics` (Get Agent Metrics) | Token usage + tool call stats in one call |
+
+Trace/span tools emit clickable deeplinks that open the panel directly at the referenced trace.
 
 ## Getting started
 
@@ -44,17 +62,18 @@ npm run build
 # 3. Open the repo in VS Code and press F5 to launch the Extension Development Host
 ```
 
-Then point your app's OTLP exporter at `http://127.0.0.1:4318` (the default OTLP/HTTP endpoint).
+Then point your app's OTLP exporter at `http://127.0.0.1:4318` (the default OTLP/HTTP endpoint). To use a different port, set it in `settings.json`:
 
-### Example: OpenTelemetry SDK (Node.js)
-
-```js
-const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
-
-const exporter = new OTLPTraceExporter({
-  url: 'http://127.0.0.1:4318/v1/traces',
-});
+```jsonc
+// settings.json
+{
+  "otelInsights.port": 4318   // change if 4318 is taken
+}
 ```
+
+> **Note:** `otelInsights.port` and the port your OTLP exporter targets must match — the receiver only listens on the configured port, so if you change one you must change the other.
+
+### Recognized attributes
 
 For agent-specific attributes the Performance tab understands:
 
@@ -77,15 +96,7 @@ map onto the same metric.
 |---------|-------------|
 | `OTel Insights: Open Panel` | Opens the telemetry panel |
 | `OTel Insights: Clear All Data` | Deletes all stored telemetry from the DB |
-
-## Configuration
-
-```jsonc
-// settings.json
-{
-  "otelInsights.port": 4318   // change if 4318 is taken
-}
-```
+| `OTel Insights: Navigate to Trace` | Opens the panel at a specific trace (used by chat deeplinks) |
 
 ## Persistence
 
@@ -97,10 +108,3 @@ Telemetry is stored in a SQLite database (`sql.js` WASM — no native compilatio
 
 Data persists across VS Code restarts. Use **Clear All Data** to wipe it.
 
-## Roadmap
-
-- [x] Timeline / waterfall chart for traces
-- [ ] Multi-service filtering
-- [ ] Alerting rules on error rate / latency
-- [ ] Export to JSON / CSV
-- [ ] MCP server to expose telemetry to AI agents
