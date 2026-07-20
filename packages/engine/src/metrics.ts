@@ -229,17 +229,7 @@ export function getMetricsData(db: QueryableDB, sinceNano?: string, untilNano?: 
       errorCount:    Number(r['error_count']   ?? 0),
     })),
 
-    tokenUsage: tokenRows.map(r => {
-      const prompt     = Number(r['prompt_tokens']     ?? 0);
-      const completion = Number(r['completion_tokens'] ?? 0);
-      return {
-        model:            String(r['model'] ?? 'unknown'),
-        totalTokens:      Math.round(prompt + completion),
-        promptTokens:     Math.round(prompt),
-        completionTokens: Math.round(completion),
-        callCount:        Number(r['call_count'] ?? 0),
-      };
-    }),
+    tokenUsage: mergeTokenUsageByModel(tokenRows),
 
     toolCalls: toolRows.map(r => ({
       toolName:        String(r['tool_name']        ?? ''),
@@ -274,3 +264,49 @@ function percentile(sorted: number[], p: number): number {
 }
 
 function round2(n: number): number { return Math.round(n * 100) / 100; }
+
+// Different agents report the same model with different version separators, e.g.
+// Copilot emits "claude-opus-4.8" while Claude Code emits "claude-opus-4-8".
+// Canonicalize by collapsing a digit-separator-digit sequence to the dotted form
+// so both conventions aggregate into a single model. This also unifies cases like
+// "claude-3-5-sonnet" ↔ "claude-3.5-sonnet" while leaving names such as "gpt-4o" intact.
+export function normalizeModelName(model: string): string {
+  return model.replace(/(\d)[.-](\d)/g, '$1.$2');
+}
+
+type TokenRow = Record<string, unknown>;
+
+function mergeTokenUsageByModel(rows: TokenRow[]): MetricsData['tokenUsage'] {
+  const merged = new Map<string, {
+    model: string;
+    promptTokens: number;
+    completionTokens: number;
+    callCount: number;
+  }>();
+
+  for (const r of rows) {
+    const model = normalizeModelName(String(r['model'] ?? 'unknown'));
+    const prompt     = Number(r['prompt_tokens']     ?? 0);
+    const completion = Number(r['completion_tokens'] ?? 0);
+    const calls      = Number(r['call_count']        ?? 0);
+
+    const existing = merged.get(model);
+    if (existing) {
+      existing.promptTokens     += prompt;
+      existing.completionTokens += completion;
+      existing.callCount        += calls;
+    } else {
+      merged.set(model, { model, promptTokens: prompt, completionTokens: completion, callCount: calls });
+    }
+  }
+
+  return Array.from(merged.values())
+    .map(m => ({
+      model:            m.model,
+      totalTokens:      Math.round(m.promptTokens + m.completionTokens),
+      promptTokens:     Math.round(m.promptTokens),
+      completionTokens: Math.round(m.completionTokens),
+      callCount:        m.callCount,
+    }))
+    .sort((a, b) => b.totalTokens - a.totalTokens);
+}
