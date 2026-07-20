@@ -62,16 +62,25 @@ npm run build
 # 3. Open the repo in VS Code and press F5 to launch the Extension Development Host
 ```
 
-Then point your app's OTLP exporter at `http://127.0.0.1:4318` (the default OTLP/HTTP endpoint). To use a different port, set it in `settings.json`:
+### Connecting a telemetry source
 
-```jsonc
-// settings.json
-{
-  "otelInsights.port": 4318   // change if 4318 is taken
-}
-```
+The receiver and your telemetry source **must use the same port**. The receiver listens on `otelInsights.port` (default `4318`), and your OTLP/HTTP exporter must send to that exact port.
 
-> **Note:** `otelInsights.port` and the port your OTLP exporter targets must match — the receiver only listens on the configured port, so if you change one you must change the other.
+1. **Pick the port.** Confirm `4318` is free, or set an open port in `settings.json`:
+   ```jsonc
+   { "otelInsights.port": 4318 }
+   ```
+2. **Point your exporter at it** — send OTLP/HTTP to `http://127.0.0.1:<port>`, using the same `<port>` as above.
+
+   To capture **VS Code / Copilot's own** agent telemetry, add this to `settings.json` (keep `otlpEndpoint`'s port equal to `otelInsights.port`), then reload VS Code and run an agent/chat request:
+   ```jsonc
+   {
+     "chat.agentHost.enabled": true,
+     "chat.agentHost.otel.enabled": true,
+     "chat.agentHost.otel.captureContent": true,
+     "chat.agentHost.otel.otlpEndpoint": "http://localhost:4318"
+   }
+   ```
 
 ### Recognized attributes
 
