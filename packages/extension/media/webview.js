@@ -541,7 +541,7 @@
   function renderTraces(/** @type {any[]} */ traces) {
     if (!tracesList) { return; }
     if (!traces.length) {
-      tracesList.innerHTML = '<div class="empty-state">No traces yet.<br><small>Point your app\'s OTLP exporter at <code>http://127.0.0.1:4318</code></small></div>';
+      tracesList.innerHTML = `<div class="empty-state">No traces yet.<br><small>Point your app's OTLP exporter at <code>http://127.0.0.1:${_currentPort ?? 4318}</code></small></div>`;
       renderChatSelection();
       return;
     }
