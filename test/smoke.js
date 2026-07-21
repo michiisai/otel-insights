@@ -71,11 +71,9 @@ const tracesPayload = {
             { key: 'gen_ai.request.model', value: { stringValue: 'gpt-4o' } },
             { key: 'gen_ai.usage.input_tokens', value: { intValue: '1024' } },
             { key: 'gen_ai.usage.output_tokens', value: { intValue: '256' } },
-            // Some SDKs also mirror exception info onto span-level attributes;
-            // getRecentErrorTraces reads these (it does not inspect event attrs).
-            { key: 'exception.type', value: { stringValue: 'RateLimitError' } },
-            { key: 'exception.message', value: { stringValue: 'Too many requests' } },
           ],
+          // Exception recorded as an OTLP span event (semconv), NOT as
+          // span-level attributes — getRecentErrorTraces must read it from here.
           events: [{
             name: 'exception', timeUnixNano: ns(90),
             attributes: [
@@ -236,6 +234,7 @@ function post(urlPath, body) {
     eq(errTraces.length, 1, 'getRecentErrorTraces returns 1');
     const es = (errTraces[0] && errTraces[0].errorSpans && errTraces[0].errorSpans[0]) || {};
     eq(es.exceptionType, 'RateLimitError', 'error span exception.type derived from event attributes');
+    eq(es.exceptionMessage, 'Too many requests', 'error span exception.message derived from event attributes');
 
     // 8) Per-service summary.
     const svc = engine.getServiceSummary(db, 'checkout-api');
