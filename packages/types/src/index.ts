@@ -14,6 +14,8 @@ export interface Span {
   statusMessage?: string | null;
   attributes: Record<string, unknown>;
   serviceName: string;
+  /** Full self-contained OTLP entity ({ resource, scope, span }) as received. */
+  raw?: Record<string, unknown>;
 }
 
 /** Trace summary row — aggregated across all spans sharing a traceId. */
@@ -85,6 +87,8 @@ export interface LogRecord {
   traceId?: string | null;
   spanId?: string | null;
   serviceName: string;
+  /** Full self-contained OTLP entity ({ resource, scope, logRecord }) as received. */
+  raw?: Record<string, unknown>;
 }
 
 /**

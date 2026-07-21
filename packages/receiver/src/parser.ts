@@ -1,73 +1,25 @@
 import type { SpanRow, MetricRow, LogRow } from './store';
 
-// ---- Attribute helpers ----
-
-type OtlpValue = {
-  stringValue?: string;
-  intValue?: string | number;
-  doubleValue?: number;
-  boolValue?: boolean;
-  arrayValue?: { values: OtlpValue[] };
-  kvlistValue?: { values: Array<{ key: string; value: OtlpValue }> };
-};
-
-function flattenAttr(v: OtlpValue): unknown {
-  if (v.stringValue !== undefined) { return v.stringValue; }
-  if (v.intValue     !== undefined) { return Number(v.intValue); }
-  if (v.doubleValue  !== undefined) { return v.doubleValue; }
-  if (v.boolValue    !== undefined) { return v.boolValue; }
-  if (v.arrayValue)  { return v.arrayValue.values.map(flattenAttr); }
-  if (v.kvlistValue) {
-    const obj: Record<string, unknown> = {};
-    for (const kv of v.kvlistValue.values) { obj[kv.key] = flattenAttr(kv.value); }
-    return obj;
-  }
-  return null;
-}
-
-function parseAttrs(attrs?: Array<{ key: string; value: OtlpValue }>): Record<string, unknown> {
-  if (!attrs?.length) { return {}; }
-  const out: Record<string, unknown> = {};
-  for (const a of attrs) { out[a.key] = flattenAttr(a.value); }
-  return out;
-}
-
-function serviceName(resourceAttrs?: Array<{ key: string; value: OtlpValue }>): string {
-  return (resourceAttrs?.find(a => a.key === 'service.name')?.value?.stringValue) ?? '';
-}
-
-function nanosDiff(startNs: string, endNs: string): number {
-  try {
-    return Number(BigInt(endNs) - BigInt(startNs)) / 1_000_000;
-  } catch {
-    return 0;
-  }
-}
-
-// ---- OTLP parsers ----
+// The receiver stores the full OTLP event verbatim. Each row's `raw` is a
+// self-contained JSON object `{ resource, scope, <entity> }` — original values
+// are preserved exactly (e.g. intValue stays a string, so 64-bit precision is
+// not lost; bytesValue is retained). All queryable columns (service name,
+// duration, flat attributes, …) are derived from `raw` by SQL views in store.ts.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function parseOtlpTraces(body: any): SpanRow[] {
   const rows: SpanRow[] = [];
   for (const rs of (body?.resourceSpans ?? [])) {
-    const svc = serviceName(rs.resource?.attributes);
     for (const ss of (rs?.scopeSpans ?? [])) {
       for (const span of (ss?.spans ?? [])) {
-        const startNs = String(span.startTimeUnixNano ?? '0');
-        const endNs   = String(span.endTimeUnixNano   ?? '0');
         rows.push({
-          traceId:            span.traceId  ?? '',
-          spanId:             span.spanId   ?? '',
-          parentSpanId:       span.parentSpanId || null,
-          name:               span.name ?? '',
-          kind:               span.kind ?? 0,
-          startTimeUnixNano:  startNs,
-          endTimeUnixNano:    endNs,
-          durationMs:         nanosDiff(startNs, endNs),
-          statusCode:         span.status?.code    ?? 0,
-          statusMessage:      span.status?.message ?? null,
-          attributes:         JSON.stringify(parseAttrs(span.attributes)),
-          serviceName:        svc,
+          raw: JSON.stringify({
+            resource: rs.resource ?? null,
+            scope:    ss.scope    ?? null,
+            resourceSchemaUrl: rs.schemaUrl ?? null,
+            scopeSchemaUrl:    ss.schemaUrl ?? null,
+            span,
+          }),
         });
       }
     }
@@ -79,24 +31,42 @@ export function parseOtlpTraces(body: any): SpanRow[] {
 export function parseOtlpMetrics(body: any): MetricRow[] {
   const rows: MetricRow[] = [];
   for (const rm of (body?.resourceMetrics ?? [])) {
-    const svc = serviceName(rm.resource?.attributes);
     for (const sm of (rm?.scopeMetrics ?? [])) {
       for (const metric of (sm?.metrics ?? [])) {
-        const dataPoints = [
-          ...(metric.gauge?.dataPoints       ?? []),
-          ...(metric.sum?.dataPoints         ?? []),
-          ...(metric.histogram?.dataPoints   ?? []),
+        // Metric-level metadata without the bulky per-type data point arrays;
+        // each data point's full payload is stored on its own row below.
+        const {
+          gauge: _g, sum: _s, histogram: _h,
+          exponentialHistogram: _eh, summary: _sum,
+          ...metricMeta
+        } = metric;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const typed: Array<[string, any]> = [
+          ['gauge',                metric.gauge],
+          ['sum',                  metric.sum],
+          ['histogram',            metric.histogram],
+          ['exponentialHistogram', metric.exponentialHistogram],
+          ['summary',              metric.summary],
         ];
-        for (const dp of dataPoints) {
-          const value = dp.asDouble ?? dp.asInt ?? dp.sum ?? null;
-          rows.push({
-            name:               metric.name ?? '',
-            value:              value !== null ? Number(value) : null,
-            timestampUnixNano:  String(dp.timeUnixNano ?? '0'),
-            attributes:         JSON.stringify(parseAttrs(dp.attributes)),
-            unit:               metric.unit ?? null,
-            serviceName:        svc,
-          });
+        for (const [metricType, agg] of typed) {
+          if (!agg) { continue; }
+          // Preserve aggregation-level metadata (aggregationTemporality,
+          // isMonotonic, …) that lives on the type wrapper, not the data point.
+          const { dataPoints, ...aggregation } = agg;
+          for (const dp of (dataPoints ?? [])) {
+            rows.push({
+              raw: JSON.stringify({
+                resource:  rm.resource ?? null,
+                scope:     sm.scope    ?? null,
+                resourceSchemaUrl: rm.schemaUrl ?? null,
+                scopeSchemaUrl:    sm.schemaUrl ?? null,
+                metric:      metricMeta,
+                metricType,
+                aggregation,
+                dataPoint:   dp,
+              }),
+            });
+          }
         }
       }
     }
@@ -108,22 +78,16 @@ export function parseOtlpMetrics(body: any): MetricRow[] {
 export function parseOtlpLogs(body: any): LogRow[] {
   const rows: LogRow[] = [];
   for (const rl of (body?.resourceLogs ?? [])) {
-    const svc = serviceName(rl.resource?.attributes);
     for (const sl of (rl?.scopeLogs ?? [])) {
       for (const lr of (sl?.logRecords ?? [])) {
-        const bodyStr =
-          typeof lr.body?.stringValue === 'string'
-            ? lr.body.stringValue
-            : JSON.stringify(lr.body ?? '');
         rows.push({
-          timestampUnixNano: String(lr.timeUnixNano ?? lr.observedTimeUnixNano ?? '0'),
-          severityNumber:    lr.severityNumber ?? 0,
-          severityText:      lr.severityText   ?? '',
-          body:              bodyStr,
-          attributes:        JSON.stringify(parseAttrs(lr.attributes)),
-          traceId:           lr.traceId  || null,
-          spanId:            lr.spanId   || null,
-          serviceName:       svc,
+          raw: JSON.stringify({
+            resource:  rl.resource ?? null,
+            scope:     sl.scope    ?? null,
+            resourceSchemaUrl: rl.schemaUrl ?? null,
+            scopeSchemaUrl:    sl.schemaUrl ?? null,
+            logRecord: lr,
+          }),
         });
       }
     }

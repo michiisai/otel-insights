@@ -267,16 +267,18 @@ function round2(n: number): number { return Math.round(n * 100) / 100; }
 
 // Different agents report the same model with different version separators, e.g.
 // Copilot emits "claude-opus-4.8" while Claude Code emits "claude-opus-4-8".
-// Canonicalize by collapsing a digit-separator-digit sequence to the dotted form
-// so both conventions aggregate into a single model. This also unifies cases like
-// "claude-3-5-sonnet" ↔ "claude-3.5-sonnet" while leaving names such as "gpt-4o" intact.
+
+// Trailing beta/variant tags such as Claude Code's "[1m]" (1M-token context window)
+// are stripped so tagged and untagged calls to the same model aggregate together.
 export function normalizeModelName(model: string): string {
-  return model.replace(/(\d)[.-](\d)/g, '$1.$2');
+  return model
+    .replace(/\s*\[[^\]]*\]\s*$/, '')
+    .replace(/(\d)[.-](\d)/g, '$1.$2');
 }
 
 type TokenRow = Record<string, unknown>;
 
-function mergeTokenUsageByModel(rows: TokenRow[]): MetricsData['tokenUsage'] {
+export function mergeTokenUsageByModel(rows: TokenRow[]): MetricsData['tokenUsage'] {
   const merged = new Map<string, {
     model: string;
     promptTokens: number;

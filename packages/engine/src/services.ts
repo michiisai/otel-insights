@@ -1,4 +1,5 @@
 import type { QueryableDB } from '@otel-insights/types';
+import { mergeTokenUsageByModel } from './metrics';
 
 export interface ServiceOperationStat {
   name: string;
@@ -180,17 +181,7 @@ export function getServiceSummary(db: QueryableDB, serviceName: string, sinceNan
       count:         Number(r['count']         ?? 0),
       errorCount:    Number(r['error_count']   ?? 0),
     })),
-    tokenUsage: tokenRows.map(r => {
-      const prompt     = Number(r['prompt_tokens']     ?? 0);
-      const completion = Number(r['completion_tokens'] ?? 0);
-      return {
-        model:            String(r['model'] ?? 'unknown'),
-        totalTokens:      Math.round(prompt + completion),
-        promptTokens:     Math.round(prompt),
-        completionTokens: Math.round(completion),
-        callCount:        Number(r['call_count'] ?? 0),
-      };
-    }),
+    tokenUsage: mergeTokenUsageByModel(tokenRows),
     toolCalls: toolRows.map(r => ({
       toolName:        String(r['tool_name']        ?? ''),
       count:           Number(r['count']            ?? 0),

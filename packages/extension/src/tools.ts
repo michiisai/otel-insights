@@ -8,6 +8,7 @@ import {
   getLogs,
   getServiceNames,
   getServiceSummary,
+  normalizeModelName,
   parseSinceNano,
   parseUntilNano,
   type GetTracesOptions,
@@ -154,9 +155,9 @@ function aggregateTokens(spans: { attributes: Record<string, unknown> }[]): Toke
 
   for (const s of spans) {
     const a = s.attributes;
-    const model = String(
+    const model = normalizeModelName(String(
       a['gen_ai.request.model'] ?? a['llm.model'] ?? ''
-    );
+    ));
     const prompt = Number(a['gen_ai.usage.input_tokens'] ?? a['llm.usage.prompt_tokens'] ?? a['input_tokens'] ?? 0);
     const completion = Number(a['gen_ai.usage.output_tokens'] ?? a['llm.usage.completion_tokens'] ?? a['output_tokens'] ?? 0);
     const cacheRead = firstNum(a, CACHE_READ_KEYS);

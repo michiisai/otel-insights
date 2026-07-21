@@ -3,94 +3,137 @@ import * as path from 'path';
 import type SqlJs from 'sql.js';
 import type { QueryableDB } from '@otel-insights/types';
 
+// Rebuilds the flat, dotted-key attributes object the engine expects
+// (e.g. {"gen_ai.request.model":"gpt-4o"}) from an OTLP attribute array
+// [{key, value:{stringValue|intValue|...}}] at `arrPath` inside `e.raw`.
+// Array values (e.g. gen_ai.response.finish_reasons -> ["end_turn"]) are
+// preserved as a nested JSON array of their scalar elements; kvlist/bytes
+// values collapse to null (no engine query relies on them).
+const flatAttrs = (arrPath: string): string => `
+    (SELECT COALESCE(json_group_object(
+       json_extract(a.value, '$.key'),
+       CASE
+         WHEN json_type(a.value, '$.value.arrayValue.values') = 'array' THEN
+           (SELECT json_group_array(
+              COALESCE(
+                json_extract(v.value, '$.stringValue'),
+                CAST(json_extract(v.value, '$.intValue') AS INTEGER),
+                json_extract(v.value, '$.doubleValue'),
+                json_extract(v.value, '$.boolValue')
+              ))
+            FROM json_each(json_extract(a.value, '$.value.arrayValue.values')) v)
+         ELSE COALESCE(
+           json_extract(a.value, '$.value.stringValue'),
+           CAST(json_extract(a.value, '$.value.intValue') AS INTEGER),
+           json_extract(a.value, '$.value.doubleValue'),
+           json_extract(a.value, '$.value.boolValue')
+         )
+       END
+     ), '{}')
+     FROM json_each(COALESCE(json_extract(e.raw, '${arrPath}'), '[]')) a)`;
+
+// Extracts service.name from the resource attributes inside `e.raw`.
+const SERVICE_NAME = `
+    (SELECT COALESCE(json_extract(r.value, '$.value.stringValue'), '')
+     FROM json_each(COALESCE(json_extract(e.raw, '$.resource.attributes'), '[]')) r
+     WHERE json_extract(r.value, '$.key') = 'service.name'
+     LIMIT 1)`;
+
+// Raw tables are the single source of truth: each row stores one full,
+// self-contained OTLP entity ({ resource, scope, <entity> }) as JSON in `raw`.
+// The `spans` / `logs` / `metric_points` VIEWS derive the columns the engine
+// queries — nothing is duplicated. Expression indexes back the hot filters.
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS spans (
-  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-  trace_id             TEXT    NOT NULL,
-  span_id              TEXT    NOT NULL UNIQUE,
-  parent_span_id       TEXT,
-  name                 TEXT    NOT NULL,
-  kind                 INTEGER NOT NULL DEFAULT 0,
-  start_time_unix_nano TEXT    NOT NULL,
-  end_time_unix_nano   TEXT    NOT NULL,
-  duration_ms          REAL    NOT NULL DEFAULT 0,
-  status_code          INTEGER NOT NULL DEFAULT 0,
-  status_message       TEXT,
-  attributes           TEXT    NOT NULL DEFAULT '{}',
-  service_name         TEXT    NOT NULL DEFAULT '',
-  created_at           INTEGER NOT NULL DEFAULT (unixepoch())
+CREATE TABLE IF NOT EXISTS raw_spans (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  raw        TEXT    NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
-CREATE INDEX IF NOT EXISTS idx_spans_trace   ON spans(trace_id);
-CREATE INDEX IF NOT EXISTS idx_spans_name    ON spans(name);
-CREATE INDEX IF NOT EXISTS idx_spans_start   ON spans(start_time_unix_nano);
-CREATE INDEX IF NOT EXISTS idx_spans_service ON spans(service_name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_spans_spanid ON raw_spans(json_extract(raw, '$.span.spanId'));
+CREATE INDEX IF NOT EXISTS idx_raw_spans_trace ON raw_spans(json_extract(raw, '$.span.traceId'));
+CREATE INDEX IF NOT EXISTS idx_raw_spans_start ON raw_spans(json_extract(raw, '$.span.startTimeUnixNano'));
 
-CREATE TABLE IF NOT EXISTS metric_points (
-  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-  name                 TEXT    NOT NULL,
-  value                REAL,
-  timestamp_unix_nano  TEXT    NOT NULL DEFAULT '0',
-  attributes           TEXT    NOT NULL DEFAULT '{}',
-  unit                 TEXT,
-  service_name         TEXT    NOT NULL DEFAULT '',
-  created_at           INTEGER NOT NULL DEFAULT (unixepoch())
+CREATE TABLE IF NOT EXISTS raw_metrics (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  raw        TEXT    NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
-CREATE INDEX IF NOT EXISTS idx_metric_name ON metric_points(name);
-CREATE INDEX IF NOT EXISTS idx_metric_ts   ON metric_points(timestamp_unix_nano);
+CREATE INDEX IF NOT EXISTS idx_raw_metrics_name ON raw_metrics(json_extract(raw, '$.metric.name'));
+CREATE INDEX IF NOT EXISTS idx_raw_metrics_ts   ON raw_metrics(json_extract(raw, '$.dataPoint.timeUnixNano'));
 
-CREATE TABLE IF NOT EXISTS logs (
-  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-  timestamp_unix_nano  TEXT    NOT NULL DEFAULT '0',
-  severity_number      INTEGER NOT NULL DEFAULT 0,
-  severity_text        TEXT    NOT NULL DEFAULT '',
-  body                 TEXT    NOT NULL DEFAULT '',
-  attributes           TEXT    NOT NULL DEFAULT '{}',
-  trace_id             TEXT,
-  span_id              TEXT,
-  service_name         TEXT    NOT NULL DEFAULT '',
-  created_at           INTEGER NOT NULL DEFAULT (unixepoch())
+CREATE TABLE IF NOT EXISTS raw_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  raw        TEXT    NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
-CREATE INDEX IF NOT EXISTS idx_logs_severity ON logs(severity_number);
-CREATE INDEX IF NOT EXISTS idx_logs_ts       ON logs(timestamp_unix_nano);
-CREATE INDEX IF NOT EXISTS idx_logs_trace    ON logs(trace_id);
+CREATE INDEX IF NOT EXISTS idx_raw_logs_severity ON raw_logs(json_extract(raw, '$.logRecord.severityNumber'));
+CREATE INDEX IF NOT EXISTS idx_raw_logs_ts       ON raw_logs(json_extract(raw, '$.logRecord.timeUnixNano'));
+
+-- Views are derived (no stored data), so drop-and-recreate on every init to
+-- pick up definition changes on existing databases without touching raw_*.
+DROP VIEW IF EXISTS spans;
+DROP VIEW IF EXISTS metric_points;
+DROP VIEW IF EXISTS logs;
+
+CREATE VIEW IF NOT EXISTS spans AS
+  SELECT
+    e.id AS id,
+    json_extract(e.raw, '$.span.traceId')      AS trace_id,
+    json_extract(e.raw, '$.span.spanId')       AS span_id,
+    json_extract(e.raw, '$.span.parentSpanId') AS parent_span_id,
+    json_extract(e.raw, '$.span.name')         AS name,
+    COALESCE(json_extract(e.raw, '$.span.kind'), 0) AS kind,
+    json_extract(e.raw, '$.span.startTimeUnixNano') AS start_time_unix_nano,
+    json_extract(e.raw, '$.span.endTimeUnixNano')   AS end_time_unix_nano,
+    (CAST(COALESCE(json_extract(e.raw, '$.span.endTimeUnixNano'),   '0') AS INTEGER)
+     - CAST(COALESCE(json_extract(e.raw, '$.span.startTimeUnixNano'), '0') AS INTEGER)) / 1000000.0 AS duration_ms,
+    COALESCE(json_extract(e.raw, '$.span.status.code'), 0) AS status_code,
+    json_extract(e.raw, '$.span.status.message') AS status_message,
+    ${flatAttrs('$.span.attributes')} AS attributes,
+    ${SERVICE_NAME} AS service_name,
+    e.raw AS raw
+  FROM raw_spans e;
+
+CREATE VIEW IF NOT EXISTS metric_points AS
+  SELECT
+    e.id AS id,
+    json_extract(e.raw, '$.metric.name') AS name,
+    COALESCE(
+      json_extract(e.raw, '$.dataPoint.asDouble'),
+      CAST(json_extract(e.raw, '$.dataPoint.asInt') AS REAL),
+      json_extract(e.raw, '$.dataPoint.sum')
+    ) AS value,
+    COALESCE(json_extract(e.raw, '$.dataPoint.timeUnixNano'), '0') AS timestamp_unix_nano,
+    ${flatAttrs('$.dataPoint.attributes')} AS attributes,
+    json_extract(e.raw, '$.metric.unit') AS unit,
+    ${SERVICE_NAME} AS service_name,
+    e.raw AS raw
+  FROM raw_metrics e;
+
+CREATE VIEW IF NOT EXISTS logs AS
+  SELECT
+    e.id AS id,
+    COALESCE(json_extract(e.raw, '$.logRecord.timeUnixNano'),
+             json_extract(e.raw, '$.logRecord.observedTimeUnixNano'), '0') AS timestamp_unix_nano,
+    COALESCE(json_extract(e.raw, '$.logRecord.severityNumber'), 0) AS severity_number,
+    COALESCE(json_extract(e.raw, '$.logRecord.severityText'), '')  AS severity_text,
+    COALESCE(json_extract(e.raw, '$.logRecord.body.stringValue'),
+             json_extract(e.raw, '$.logRecord.body'), '') AS body,
+    ${flatAttrs('$.logRecord.attributes')} AS attributes,
+    json_extract(e.raw, '$.logRecord.traceId') AS trace_id,
+    json_extract(e.raw, '$.logRecord.spanId')  AS span_id,
+    ${SERVICE_NAME} AS service_name,
+    e.raw AS raw
+  FROM raw_logs e;
 `;
 
 // ── Row types ────────────────────────────────────────────────────────────────
+// A stored row is just the full OTLP entity as a JSON string; the queryable
+// columns are derived by the views above.
 
-export interface SpanRow {
-  traceId: string;
-  spanId: string;
-  parentSpanId: string | null;
-  name: string;
-  kind: number;
-  startTimeUnixNano: string;
-  endTimeUnixNano: string;
-  durationMs: number;
-  statusCode: number;
-  statusMessage: string | null;
-  attributes: string;
-  serviceName: string;
-}
-
-export interface MetricRow {
-  name: string;
-  value: number | null;
-  timestampUnixNano: string;
-  attributes: string;
-  unit: string | null;
-  serviceName: string;
-}
-
-export interface LogRow {
-  timestampUnixNano: string;
-  severityNumber: number;
-  severityText: string;
-  body: string;
-  attributes: string;
-  traceId: string | null;
-  spanId: string | null;
-  serviceName: string;
-}
+export interface SpanRow  { raw: string }
+export interface MetricRow { raw: string }
+export interface LogRow   { raw: string }
 
 // ── DatabaseAdapter ───────────────────────────────────────────────────────────
 
@@ -166,6 +209,8 @@ export class TelemetryStore {
       this.sqlDb = new SQL.Database();
     }
 
+    this.dropLegacyTables();
+
     // Run schema (sql.js only supports one statement per run() call)
     for (const stmt of SCHEMA.split(';').map(s => s.trim()).filter(Boolean)) {
       this.sqlDb.run(stmt);
@@ -174,6 +219,19 @@ export class TelemetryStore {
     this.adapter = new DatabaseAdapter(this.sqlDb);
     // Persist to disk every 30 s to survive crashes.
     this.saveTimer = setInterval(() => this.flush(), 30_000);
+  }
+
+  // Drops legacy layouts left by earlier extension versions.
+  private dropLegacyTables(): void {
+    const isTable = (name: string): boolean => {
+      const res = this.sqlDb.exec(
+        `SELECT type FROM sqlite_master WHERE name = '${name}'`,
+      )[0];
+      return res?.values?.[0]?.[0] === 'table';
+    };
+    for (const name of ['spans', 'metric_points', 'logs']) {
+      if (isTable(name)) { this.sqlDb.run(`DROP TABLE ${name}`); }
+    }
   }
 
   getDb(): QueryableDB {
@@ -185,62 +243,39 @@ export class TelemetryStore {
   insertSpans(rows: SpanRow[]): void {
     if (!rows.length) { return; }
     this.adapter.runInTransaction(rows, (db, rs) => {
-      const s = db.prepare(`
-        INSERT OR IGNORE INTO spans
-          (trace_id, span_id, parent_span_id, name, kind,
-           start_time_unix_nano, end_time_unix_nano, duration_ms,
-           status_code, status_message, attributes, service_name)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-      `);
-      for (const r of rs) {
-        s.run([r.traceId, r.spanId, r.parentSpanId, r.name, r.kind,
-               r.startTimeUnixNano, r.endTimeUnixNano, r.durationMs,
-               r.statusCode, r.statusMessage, r.attributes, r.serviceName]);
-      }
+      // INSERT OR IGNORE dedupes by span_id via the unique expression index.
+      const s = db.prepare(`INSERT OR IGNORE INTO raw_spans (raw) VALUES (?)`);
+      for (const r of rs) { s.run([r.raw]); }
       s.free();
     });
-    this.pruneTable('spans', MAX_SPANS);
+    this.pruneTable('raw_spans', MAX_SPANS);
   }
 
   insertMetrics(rows: MetricRow[]): void {
     if (!rows.length) { return; }
     this.adapter.runInTransaction(rows, (db, rs) => {
-      const s = db.prepare(`
-        INSERT INTO metric_points
-          (name, value, timestamp_unix_nano, attributes, unit, service_name)
-        VALUES (?,?,?,?,?,?)
-      `);
-      for (const r of rs) {
-        s.run([r.name, r.value, r.timestampUnixNano, r.attributes, r.unit, r.serviceName]);
-      }
+      const s = db.prepare(`INSERT INTO raw_metrics (raw) VALUES (?)`);
+      for (const r of rs) { s.run([r.raw]); }
       s.free();
     });
-    this.pruneTable('metric_points', MAX_METRICS);
+    this.pruneTable('raw_metrics', MAX_METRICS);
   }
 
   insertLogs(rows: LogRow[]): void {
     if (!rows.length) { return; }
     this.adapter.runInTransaction(rows, (db, rs) => {
-      const s = db.prepare(`
-        INSERT INTO logs
-          (timestamp_unix_nano, severity_number, severity_text,
-           body, attributes, trace_id, span_id, service_name)
-        VALUES (?,?,?,?,?,?,?,?)
-      `);
-      for (const r of rs) {
-        s.run([r.timestampUnixNano, r.severityNumber, r.severityText,
-               r.body, r.attributes, r.traceId, r.spanId, r.serviceName]);
-      }
+      const s = db.prepare(`INSERT INTO raw_logs (raw) VALUES (?)`);
+      for (const r of rs) { s.run([r.raw]); }
       s.free();
     });
-    this.pruneTable('logs', MAX_LOGS);
+    this.pruneTable('raw_logs', MAX_LOGS);
   }
 
   /**
    * Deletes the oldest rows in `table` (by autoincrement `id`, i.e. insertion order)
    * once its row count exceeds `maxRows`, keeping only the most recent `maxRows` rows.
    */
-  private pruneTable(table: 'spans' | 'metric_points' | 'logs', maxRows: number): void {
+  private pruneTable(table: 'raw_spans' | 'raw_metrics' | 'raw_logs', maxRows: number): void {
     const countRow = this.sqlDb.exec(`SELECT COUNT(*) AS c FROM ${table}`)[0];
     const count = Number(countRow?.values?.[0]?.[0] ?? 0);
     if (count <= maxRows) { return; }
@@ -250,7 +285,7 @@ export class TelemetryStore {
   }
 
   clear(): void {
-    for (const tbl of ['spans', 'metric_points', 'logs']) {
+    for (const tbl of ['raw_spans', 'raw_metrics', 'raw_logs']) {
       this.sqlDb.run(`DELETE FROM ${tbl}`);
     }
     this.flush();

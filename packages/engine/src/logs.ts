@@ -55,6 +55,7 @@ export function getLogs(db: QueryableDB, opts: LogQueryOptions = {}): LogRecord[
     traceId:           r['trace_id'] != null ? String(r['trace_id']) : null,
     spanId:            r['span_id']  != null ? String(r['span_id'])  : null,
     serviceName:       String(r['service_name']       ?? ''),
+    raw:               parseJson(r['raw']),
   }));
 }
 

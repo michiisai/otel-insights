@@ -123,6 +123,7 @@ export function getSpansByTraceId(db: QueryableDB, traceId: string): Span[] {
     statusMessage:     r['status_message'] != null ? String(r['status_message']) : null,
     attributes:        parseJson(r['attributes']),
     serviceName:       String(r['service_name']       ?? ''),
+    raw:               parseJson(r['raw']),
   }));
 }
 

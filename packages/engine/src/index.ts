@@ -1,5 +1,5 @@
 export { getTraces, getSpansByTraceId, getServices, GetTracesOptions } from './traces';
-export { getMetricsData } from './metrics';
+export { getMetricsData, normalizeModelName } from './metrics';
 export { getLogs } from './logs';
 export type { LogQueryOptions } from './logs';
 export { getRecentErrorTraces } from './errors';
