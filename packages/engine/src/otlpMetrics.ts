@@ -51,30 +51,43 @@ export function getMetricDetail(db: QueryableDB, name: string, serviceName: stri
   const unit         = String(meta?.['unit'] ?? '');
   const isCumulative = Number(meta?.['temporality'] ?? 0) === CUMULATIVE;
 
-  // Latest point per series (correct base for cumulative aggregation).
-  const latestCte = `
-    WITH latest AS (
-      SELECT mp.attributes, mp.value, mp.data_count, mp.data_sum, mp.data_min, mp.data_max
-      FROM metric_points mp
-      JOIN (
-        SELECT attributes, MAX(CAST(timestamp_unix_nano AS INTEGER)) AS mt
-        FROM metric_points WHERE name = ? AND service_name = ? GROUP BY attributes
-      ) L ON mp.attributes = L.attributes
-         AND CAST(mp.timestamp_unix_nano AS INTEGER) = L.mt
-      WHERE mp.name = ? AND mp.service_name = ?
-    )`;
+  // Base row set to aggregate, chosen by temporality:
+  //  - cumulative (e.g. Copilot): each point holds a RUNNING TOTAL per series, so
+  //    take the LATEST point per series and aggregate across series.
+  //  - delta (e.g. Claude Code default): each point is an INDEPENDENT increment
+  //    for its interval, so aggregate EVERY point.
+  // Both branches expose the same columns (attributes, value, data_*), so the
+  // downstream stat/dimension queries are identical.
+  const baseCte = isCumulative
+    ? `WITH base AS (
+        SELECT mp.attributes, mp.value, mp.data_count, mp.data_sum, mp.data_min, mp.data_max
+        FROM metric_points mp
+        JOIN (
+          SELECT attributes, MAX(CAST(timestamp_unix_nano AS INTEGER)) AS mt
+          FROM metric_points WHERE name = ? AND service_name = ? GROUP BY attributes
+        ) L ON mp.attributes = L.attributes
+           AND CAST(mp.timestamp_unix_nano AS INTEGER) = L.mt
+        WHERE mp.name = ? AND mp.service_name = ?
+      )`
+    : `WITH base AS (
+        SELECT attributes, value, data_count, data_sum, data_min, data_max
+        FROM metric_points WHERE name = ? AND service_name = ?
+      )`;
+  const baseParams = isCumulative
+    ? [name, serviceName, name, serviceName]
+    : [name, serviceName];
 
   const stat = db.prepare(`
-    ${latestCte}
+    ${baseCte}
     SELECT
-      COUNT(*)        AS series_count,
+      COUNT(DISTINCT attributes) AS series_count,
       SUM(data_count) AS total_count,
       SUM(data_sum)   AS sum,
       MIN(data_min)   AS min,
       MAX(data_max)   AS max,
       SUM(value)      AS total
-    FROM latest
-  `).get(name, serviceName, name, serviceName);
+    FROM base
+  `).get(...baseParams);
 
   const totalCount = Number(stat?.['total_count'] ?? 0);
   const sum        = Number(stat?.['sum'] ?? 0);
@@ -82,16 +95,16 @@ export function getMetricDetail(db: QueryableDB, name: string, serviceName: stri
   // Per-attribute breakdown. `attributes` is already a flat {key:value} object,
   // so json_each yields one row per dimension.
   const dimRows = db.prepare(`
-    ${latestCte}
+    ${baseCte}
     SELECT
       j.key   AS dim_key,
       j.value AS dim_val,
-      SUM(COALESCE(latest.data_count, 1))            AS cnt,
-      SUM(COALESCE(latest.data_sum, latest.value, 0)) AS total
-    FROM latest, json_each(latest.attributes) j
+      SUM(COALESCE(base.data_count, 1))            AS cnt,
+      SUM(COALESCE(base.data_sum, base.value, 0)) AS total
+    FROM base, json_each(base.attributes) j
     GROUP BY dim_key, dim_val
     ORDER BY dim_key ASC, cnt DESC
-  `).all(name, serviceName, name, serviceName);
+  `).all(...baseParams);
 
   const dimMap = new Map<string, MetricDimension>();
   for (const r of dimRows) {
