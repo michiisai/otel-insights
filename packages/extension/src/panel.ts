@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { TelemetryStore } from '@otel-insights/receiver';
-import { getTraces, getSpansByTraceId, getServices, getMetricsData, getLogs, getLogServiceNames, getMetricInstruments, getMetricDetail } from '@otel-insights/engine';
-import type { WebviewToExtension, ExtensionToWebview, TabId, MetricsData, MetricInstrument } from '@otel-insights/types';
+import { getTraces, getSpansByTraceId, getServices, getMetricsData, getLogs, getLogServiceNames, getMetricInstruments, getMetricDetail, getSessions } from '@otel-insights/engine';
+import type { WebviewToExtension, ExtensionToWebview, TabId, MetricsData, MetricInstrument, Session } from '@otel-insights/types';
 
 export class OtelInsightsPanel {
   static readonly viewType   = 'otelInsights';
@@ -20,6 +20,9 @@ export class OtelInsightsPanel {
   /** Cached OTLP metric instrument list, keyed by store data-version (the list
    *  scans all metric points, so we avoid recomputing when data is unchanged). */
   private instrumentsCache?: { version: number; data: MetricInstrument[] };
+  /** Cached session list, keyed by store data-version (the grouping scans all
+   *  spans, so we avoid recomputing when data is unchanged). */
+  private sessionsCache?: { version: number; data: Session[] };
 
   private constructor(
     private readonly extensionUri: vscode.Uri,
@@ -102,11 +105,20 @@ export class OtelInsightsPanel {
           serviceName: msg.service,
           errorsOnly: msg.errorsOnly,
           sortOrder: msg.sortOrder,
+          sessionId: msg.sessionId,
         }) });
         break;
       case 'getServices':
         this.post({ type: 'services', data: getServices(db) });
         break;
+      case 'getSessions': {
+        const version = this.store.getDataVersion();
+        if (!this.sessionsCache || this.sessionsCache.version !== version) {
+          this.sessionsCache = { version, data: getSessions(db) };
+        }
+        this.post({ type: 'sessions', data: this.sessionsCache.data });
+        break;
+      }
       case 'getLogServices':
         this.post({ type: 'logServices', data: getLogServiceNames(db) });
         break;
@@ -235,9 +247,38 @@ export class OtelInsightsPanel {
     </div>
   </div>
 
-  <!-- Sessions tab (placeholder — engine layer lands later) -->
+  <!-- Sessions tab — agent conversations grouped from traces (#15) -->
   <div id="sessions-panel" class="panel" role="tabpanel">
-    <div class="empty-state">Sessions coming soon.<br><small>Agent conversations will be grouped here.</small></div>
+
+    <!-- Master: session list -->
+    <div id="sessions-list-view" class="sessions-view">
+      <div class="sessions-toolbar">
+        <input id="session-search" type="text" placeholder="Search sessions…" />
+        <button id="session-errors-btn" class="filter-toggle" title="Failed sessions only">⚠ Failed</button>
+      </div>
+      <div id="sessions-list" class="list-container">
+        <div class="empty-state">Loading sessions…</div>
+      </div>
+    </div>
+
+    <!-- Detail: a single session's explorer -->
+    <div id="session-detail-view" class="sessions-view" style="display:none">
+      <button id="session-back-btn" class="session-back-btn" title="Back to all sessions">← Back to sessions</button>
+      <div id="session-summary" class="session-summary"></div>
+      <div class="traces-split session-split">
+        <div class="traces-left">
+          <div class="session-traces-header">Traces</div>
+          <div id="session-traces-list" class="list-container">
+            <div class="empty-state">Loading traces…</div>
+          </div>
+        </div>
+        <div class="traces-divider" id="session-divider" aria-hidden="true"></div>
+        <div class="traces-right" id="session-span-detail">
+          <div class="span-detail-placeholder">← Expand a trace and click a span to view its details</div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Traces tab -->

@@ -1,4 +1,5 @@
 import type { QueryableDB, Trace, Span } from '@otel-insights/types';
+import { SESSION_ID_EXPR, SESSION_TRACE_FILTER } from './sessions';
 
 export interface GetTracesOptions {
   limit?: number;
@@ -10,6 +11,8 @@ export interface GetTracesOptions {
   attributeKey?: string;
   attributeValue?: string;
   sortOrder?: 'desc' | 'asc';
+  /** Restrict to traces belonging to this resolved session id. */
+  sessionId?: string;
 }
 
 export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[] {
@@ -23,6 +26,7 @@ export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[]
     attributeKey,
     attributeValue,
     sortOrder = 'desc',
+    sessionId,
   } = opts;
 
   const conditions: string[] = [];
@@ -31,6 +35,18 @@ export function getTraces(db: QueryableDB, opts: GetTracesOptions = {}): Trace[]
   if (serviceName) {
     conditions.push('service_name = ?');
     params.push(serviceName);
+  }
+
+  // Session filter: restrict to traces whose trace-level resolved session id matches.
+  // Reuses the same resolver as getSessions so the mapping is identical.
+  if (sessionId) {
+    conditions.push(`trace_id IN (
+      SELECT trace_id FROM spans
+      WHERE ${SESSION_TRACE_FILTER}
+      GROUP BY trace_id
+      HAVING ${SESSION_ID_EXPR} = ?
+    )`);
+    params.push(sessionId);
   }
 
   if (nameSearch) {

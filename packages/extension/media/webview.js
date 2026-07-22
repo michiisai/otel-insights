@@ -49,6 +49,16 @@
   const metricDetailPanel = $('metric-detail-panel');
   const metricFilter     = /** @type {HTMLInputElement} */ ($('metric-filter'));
 
+  // Sessions tab elements
+  const sessionsListView   = $('sessions-list-view');
+  const sessionDetailView  = $('session-detail-view');
+  const sessionsList       = $('sessions-list');
+  const sessionSummary     = $('session-summary');
+  const sessionTracesList  = $('session-traces-list');
+  const sessionBackBtn     = $('session-back-btn');
+  const sessionSearch      = /** @type {HTMLInputElement} */ ($('session-search'));
+  const sessionErrBtn      = $('session-errors-btn');
+
   /** @type {string} currently selected service filter */
   let selectedService = '';
   /** @type {'desc'|'asc'} */
@@ -63,6 +73,11 @@
   let currentInstruments = [];
   /** Currently selected metric instrument key (name|service), or null. */
   let selectedMetricKey = null;
+  /** @type {any[]} */
+  let currentSessions = [];
+  /** Currently selected session id (null = showing the list), and its filters. */
+  let selectedSessionId = null;
+  let sessionErrorsOnly = false;
   /** @type {any[]} */
   let currentLogs = [];
   /** Index of the currently selected log row (-1 = none) */
@@ -106,7 +121,7 @@
     else if (activeTab === 'traces')      { vscode.postMessage({ type: 'getServices' }); fetchTraces(); }
     else if (activeTab === 'logs')        { vscode.postMessage({ type: 'getLogServices' }); fetchLogs(); }
     else if (activeTab === 'metrics')     { vscode.postMessage({ type: 'getMetricInstruments' }); }
-    // 'sessions' is a placeholder for now — no data fetch.
+    else if (activeTab === 'sessions')    { showSessionsList(); vscode.postMessage({ type: 'getSessions' }); }
   }
 
   /** Switch to Traces tab, filter to the given trace ID, and optionally highlight a span */
@@ -292,6 +307,18 @@
     fetchTraces();
   });
 
+  // Session filters (client-side over the cached session list) + back navigation.
+  sessionSearch?.addEventListener('input', () => renderSessions(currentSessions));
+  sessionErrBtn?.addEventListener('click', () => {
+    sessionErrorsOnly = !sessionErrorsOnly;
+    sessionErrBtn.classList.toggle('active', sessionErrorsOnly);
+    renderSessions(currentSessions);
+  });
+  sessionBackBtn?.addEventListener('click', () => {
+    showSessionsList();
+    renderSessions(currentSessions);
+  });
+
   // Time sort toggle
   timeSortBtn?.addEventListener('click', () => {
     timeSortOrder = timeSortOrder === 'desc' ? 'asc' : 'desc';
@@ -448,9 +475,13 @@
     const msg = event.data;
     switch (msg.type) {
       case 'status':   renderStatus(msg);                    break;
-      case 'traces':   renderTraces(msg.data);               break;
+      case 'traces':
+        if (activeTab === 'sessions') { renderSessionTraces(msg.data); }
+        else { renderTraces(msg.data); }
+        break;
       case 'services':    renderServices(msg.data);              break;
       case 'logServices': renderLogServices(msg.data);           break;
+      case 'sessions': renderSessions(msg.data);             break;
       case 'spans':    renderSpans(msg.traceId, msg.data);   break;
       case 'metrics': renderMetrics(msg.data);              break;
       case 'metricInstruments': renderMetricInstruments(msg.data); break;
@@ -586,6 +617,167 @@
     `).join('');
   }
 
+  // ── Sessions ──────────────────────────────────────────────────────────────────
+  /** Show the master list, hide the detail view. */
+  function showSessionsList() {
+    selectedSessionId = null;
+    if (sessionsListView)  { sessionsListView.style.display  = ''; }
+    if (sessionDetailView) { sessionDetailView.style.display = 'none'; }
+  }
+
+  /** Show the detail explorer for a single session, hide the list. */
+  function showSessionDetail() {
+    if (sessionsListView)  { sessionsListView.style.display  = 'none'; }
+    if (sessionDetailView) { sessionDetailView.style.display = ''; }
+  }
+
+  /** A session matches the active client-side filters (search text + failed-only). */
+  function sessionMatchesFilters(/** @type {any} */ s) {
+    if (sessionErrorsOnly && !s.hasError) { return false; }
+    const q = (sessionSearch?.value || '').trim().toLowerCase();
+    if (!q) { return true; }
+    const hay = `${s.sessionId} ${s.serviceName} ${(s.models || []).join(' ')} ${s.failureReason || ''}`.toLowerCase();
+    return hay.includes(q);
+  }
+
+  function renderSessions(/** @type {any[]} */ sessions) {
+    currentSessions = sessions || [];
+    if (!sessionsList) { return; }
+    const rows = currentSessions.filter(sessionMatchesFilters);
+    if (!currentSessions.length) {
+      sessionsList.innerHTML = `<div class="empty-state">No sessions yet.<br><small>Agent conversations (Copilot, Claude Code) appear here once telemetry arrives.</small></div>`;
+      return;
+    }
+    if (!rows.length) {
+      sessionsList.innerHTML = `<div class="empty-state">No sessions match the current filter.</div>`;
+      return;
+    }
+    sessionsList.innerHTML = rows.map(sessionRowHtml).join('');
+    sessionsList.querySelectorAll('.session-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const id = /** @type {HTMLElement} */ (row).dataset.id ?? '';
+        selectSession(id);
+      });
+    });
+  }
+
+  /** @param {any} s */
+  function sessionRowHtml(s) {
+    const models = (s.models || []).join(', ');
+    const dur    = fmtMs(s.durationMs);
+    const tokens = s.totalTokens ? `${fmtNum(s.totalTokens)} tok` : '';
+    return `
+      <div class="session-row ${s.hasError ? 'row--error' : ''}" data-id="${esc(s.sessionId)}">
+        <span class="session-status ${s.hasError ? 'session-status--err' : 'session-status--ok'}" title="${s.hasError ? 'Failed' : 'OK'}"></span>
+        <span class="session-cell session-cell--main">
+          <span class="session-title">${esc(models || s.serviceName)}</span>
+          <span class="session-id">${esc(s.sessionId)}</span>
+        </span>
+        <span class="session-cell session-cell--service">${esc(s.serviceName)}</span>
+        <span class="session-cell session-cell--ts">${fmtNano(s.startTimeUnixNano)}</span>
+        <span class="session-cell session-cell--metric">${s.traceCount} trace${s.traceCount !== 1 ? 's' : ''}</span>
+        <span class="session-cell session-cell--metric">${s.llmRequestCount} LLM</span>
+        <span class="session-cell session-cell--metric">${s.toolCallCount} tool${s.toolCallCount !== 1 ? 's' : ''}</span>
+        <span class="session-cell session-cell--metric">${dur}${tokens ? ' · ' + tokens : ''}</span>
+      </div>
+    `;
+  }
+
+  /** Open a session: render its summary card and fetch its traces. */
+  function selectSession(/** @type {string} */ sessionId) {
+    selectedSessionId = sessionId;
+    const s = currentSessions.find(x => x.sessionId === sessionId);
+    showSessionDetail();
+    renderSessionSummary(s);
+    // Reset the span-detail pane + traces list for the new session.
+    const detail = $('session-span-detail');
+    if (detail) { detail.innerHTML = `<div class="span-detail-placeholder">← Expand a trace and click a span to view its details</div>`; }
+    if (sessionTracesList) { sessionTracesList.innerHTML = `<div class="empty-state">Loading traces…</div>`; }
+    vscode.postMessage({ type: 'getTraces', sessionId, sortOrder: 'asc' });
+  }
+
+  /** @param {any} s */
+  function renderSessionSummary(s) {
+    if (!sessionSummary) { return; }
+    if (!s) { sessionSummary.innerHTML = ''; return; }
+    const models = (s.models || []).join(', ') || '—';
+    const statusChip = s.hasError
+      ? `<span class="session-chip session-chip--err">Failed</span>`
+      : `<span class="session-chip session-chip--ok">OK</span>`;
+    const failure = s.hasError && s.failureReason
+      ? `<div class="session-failure"><span class="session-failure-label">Failure reason</span><span class="session-failure-text">${esc(s.failureReason)}</span></div>`
+      : '';
+    const stat = (/** @type {string} */ label, /** @type {string} */ value) =>
+      `<div class="session-stat"><div class="session-stat-value">${value}</div><div class="session-stat-label">${label}</div></div>`;
+    sessionSummary.innerHTML = `
+      <div class="session-summary-head">
+        ${statusChip}
+        <span class="session-summary-service">${esc(s.serviceName)}</span>
+        <span class="session-summary-id">${esc(s.sessionId)}</span>
+      </div>
+      <div class="session-summary-models">Models: <strong>${esc(models)}</strong></div>
+      <div class="session-stats">
+        ${stat('Traces',       String(s.traceCount))}
+        ${stat('Spans',        String(s.spanCount))}
+        ${stat('LLM requests', String(s.llmRequestCount))}
+        ${stat('Tool calls',   String(s.toolCallCount))}
+        ${stat('Tokens',       s.totalTokens ? fmtNum(s.totalTokens) : '—')}
+        ${stat('Duration',     fmtMs(s.durationMs))}
+      </div>
+      ${failure}
+    `;
+  }
+
+  /** Render a session's traces (reuses the trace-row look; expands to span waterfalls). */
+  function renderSessionTraces(/** @type {any[]} */ traces) {
+    if (!sessionTracesList) { return; }
+    if (!traces.length) {
+      sessionTracesList.innerHTML = `<div class="empty-state">No traces in this session.</div>`;
+      return;
+    }
+    sessionTracesList.innerHTML = traces.map(t => {
+      const isOpen = expandedTraces.has(t.traceId);
+      return `
+        <div class="trace-row ${t.hasError ? 'row--error' : ''} ${isOpen ? '' : 'collapsed'}" data-id="${esc(t.traceId)}">
+          <span class="expand-icon" aria-hidden="true">${isOpen ? '▾' : '▸'}</span>
+          <span class="cell cell--name">
+            <span class="trace-name">${esc(t.rootSpanName)}</span>
+            <span class="trace-id">${esc(t.traceId)}</span>
+          </span>
+          <span class="cell cell--service">${esc(t.serviceName)}</span>
+          <span class="cell cell--ts">${fmtNano(t.startTimeUnixNano)}</span>
+          <span class="cell cell--dur">${fmtMs(t.durationMs)}</span>
+          <span class="cell cell--spans">${t.spanCount} span${t.spanCount !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="waterfall-container" id="ssc-${esc(t.traceId)}" data-span-container="${esc(t.traceId)}"
+             style="display:${isOpen ? 'block' : 'none'}">
+          <div class="loading-row">loading spans…</div>
+        </div>
+      `;
+    }).join('');
+
+    sessionTracesList.querySelectorAll('.trace-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const id        = /** @type {HTMLElement} */ (row).dataset.id ?? '';
+        const container = $(`ssc-${id}`);
+        const icon      = row.querySelector('.expand-icon');
+        if (!container) { return; }
+        if (expandedTraces.has(id)) {
+          expandedTraces.delete(id);
+          container.style.display = 'none';
+          row.classList.add('collapsed');
+          if (icon) { icon.textContent = '▸'; }
+        } else {
+          expandedTraces.add(id);
+          container.style.display = 'block';
+          row.classList.remove('collapsed');
+          if (icon) { icon.textContent = '▾'; }
+          vscode.postMessage({ type: 'getSpans', traceId: id });
+        }
+      });
+    });
+  }
+
   // ── Traces ────────────────────────────────────────────────────────────────────
   function renderTraces(/** @type {any[]} */ traces) {
     if (!tracesList) { return; }
@@ -684,10 +876,11 @@
 
   // ── Span waterfall ────────────────────────────────────────────────────────────
   function renderSpans(/** @type {string} */ traceId, /** @type {any[]} */ spans) {
-    const container = $(`sc-${traceId}`);
-    if (!container) { return; }
+    // A trace can be shown in two places (Traces tab + Session detail); fill both.
+    const containers = [$(`sc-${traceId}`), $(`ssc-${traceId}`)].filter(Boolean);
+    if (!containers.length) { return; }
     if (!spans.length) {
-      container.innerHTML = '<div class="empty-state small">No spans found.</div>';
+      containers.forEach(c => { c.innerHTML = '<div class="empty-state small">No spans found.</div>'; });
       return;
     }
 
@@ -750,21 +943,26 @@
       `;
     }
 
-    container.innerHTML = roots.map(r => nodeHtml(r, 0)).join('');
+    const html = roots.map(r => nodeHtml(r, 0)).join('');
 
-    // Clicking a span row shows its detail in the right panel
-    container.querySelectorAll('.waterfall-row').forEach(row => {
-      row.addEventListener('click', () => {
-        const spanId = /** @type {HTMLElement} */ (row).dataset.spanId ?? '';
-        const node   = byId[spanId];
-        if (!node) { return; }
-        document.querySelectorAll('.waterfall-row.selected').forEach(r => r.classList.remove('selected'));
-        row.classList.add('selected');
-        showSpanDetail(node);
+    containers.forEach(container => {
+      container.innerHTML = html;
+      // Clicking a span row shows its detail in the active tab's detail panel.
+      container.querySelectorAll('.waterfall-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const spanId = /** @type {HTMLElement} */ (row).dataset.spanId ?? '';
+          const node   = byId[spanId];
+          if (!node) { return; }
+          document.querySelectorAll('.waterfall-row.selected').forEach(r => r.classList.remove('selected'));
+          row.classList.add('selected');
+          showSpanDetail(node);
+        });
       });
     });
 
     // If a deeplink is pending for this trace, highlight + scroll to the target span
+    // (deeplinks only target the Traces tab container).
+    const container = containers[0];
     if (pendingDeeplink && pendingDeeplink.traceId === traceId && pendingDeeplink.spanId) {
       const targetSpanId = pendingDeeplink.spanId;
       pendingDeeplink = null; // consume
@@ -797,14 +995,20 @@
 
   /** @param {any} node */
   function showSpanDetail(node) {
-    const panel = $('span-detail-panel');
+    // Render into the active tab's detail pane. The Sessions view has no chat
+    // integration, so its span detail is read-only (no +chat button).
+    const inSession = activeTab === 'sessions';
+    const panel = $(inSession ? 'session-span-detail' : 'span-detail-panel');
     if (!panel) { return; }
     currentSpanNode = node;
     const isSelected = selectedSpans.has(node.spanId);
+    const chatBtn = inSession
+      ? ''
+      : `<button class="add-to-chat-btn add-to-chat-btn--visible${isSelected ? ' add-to-chat-btn--selected' : ''}" title="Add span to chat">${isSelected ? '✓ added' : '+ chat'}</button>`;
     panel.innerHTML = `
       <div class="span-detail-panel-header">
         <span>Span Details</span>
-        <button class="add-to-chat-btn add-to-chat-btn--visible${isSelected ? ' add-to-chat-btn--selected' : ''}" title="Add span to chat">${isSelected ? '✓ added' : '+ chat'}</button>
+        ${chatBtn}
       </div>
       ${spanDetailHtml(node)}
     `;

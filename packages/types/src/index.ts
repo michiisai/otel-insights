@@ -104,6 +104,34 @@ export interface QueryableDB {
   exec(sql: string): void;
 }
 
+/**
+ * One agent session — a conversation that groups multiple traces.
+ * The session id is resolved at the TRACE level from any span carrying a
+ * conversation/session id (gen_ai.conversation.id | session.id |
+ * copilot_chat.chat_session_id), falling back to trace_id. copilot-chat
+ * (vscode LM API / utility calls) is excluded from sessions entirely.
+ */
+export interface Session {
+  sessionId: string;
+  /** Emitting service (github-copilot | claude-code). */
+  serviceName: string;
+  /** Distinct request models seen across the session's LLM requests. */
+  models: string[];
+  startTimeUnixNano: string;
+  endTimeUnixNano: string;
+  /** Wall-clock span of the session (last end − first start), in ms. */
+  durationMs: number;
+  traceCount: number;
+  spanCount: number;
+  llmRequestCount: number;
+  toolCallCount: number;
+  /** Summed gen_ai.usage input+output tokens across the session (0 if unreported). */
+  totalTokens: number;
+  hasError: boolean;
+  /** A representative error status message when the session has a failure. */
+  failureReason?: string | null;
+}
+
 /** One OTLP metric instrument (aggregated across its time-series/data points). */
 export interface MetricInstrument {
   name: string;
@@ -150,8 +178,9 @@ export interface MetricDetail {
 /** Messages sent from the webview to the extension host. */
 export type WebviewToExtension =
   | { type: 'ready' }
-  | { type: 'getTraces'; search?: string; service?: string; errorsOnly?: boolean; sortOrder?: 'asc' | 'desc' }
+  | { type: 'getTraces'; search?: string; service?: string; errorsOnly?: boolean; sortOrder?: 'asc' | 'desc'; sessionId?: string }
   | { type: 'getServices' }
+  | { type: 'getSessions' }
   | { type: 'getLogServices' }
   | { type: 'getSpans'; traceId: string }
   | { type: 'getMetrics' }
@@ -165,6 +194,7 @@ export type WebviewToExtension =
 export type ExtensionToWebview =
   | { type: 'traces'; data: Trace[] }
   | { type: 'services'; data: string[] }
+  | { type: 'sessions'; data: Session[] }
   | { type: 'logServices'; data: string[] }
   | { type: 'spans'; traceId: string; data: Span[] }
   | { type: 'metrics'; data: MetricsData }
