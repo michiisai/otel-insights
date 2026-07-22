@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { TelemetryStore } from '@otel-insights/receiver';
 import { getTraces, getSpansByTraceId, getServices, getMetricsData, getLogs, getLogServiceNames } from '@otel-insights/engine';
-import type { WebviewToExtension, ExtensionToWebview, TabId } from '@otel-insights/types';
+import type { WebviewToExtension, ExtensionToWebview, TabId, MetricsData } from '@otel-insights/types';
 
 export class OtelInsightsPanel {
   static readonly viewType   = 'otelInsights';
@@ -13,6 +13,10 @@ export class OtelInsightsPanel {
   private ready = false;
   /** A tab requested before the webview was ready; flushed on 'ready'. */
   private pendingTab?: TabId;
+  /** Cached Home/metrics result + the store data-version it was computed at.
+   *  Avoids re-running the expensive metrics scan (which blocks the single
+   *  synchronous extension host thread) when the data hasn't changed. */
+  private metricsCache?: { version: number; data: MetricsData };
 
   private constructor(
     private readonly extensionUri: vscode.Uri,
@@ -106,9 +110,16 @@ export class OtelInsightsPanel {
       case 'getSpans':
         this.post({ type: 'spans', traceId: msg.traceId, data: getSpansByTraceId(db, msg.traceId) });
         break;
-      case 'getMetrics':
-        this.post({ type: 'metrics', data: getMetricsData(db) });
+      case 'getMetrics': {
+        const version = this.store.getDataVersion();
+        if (!this.metricsCache || this.metricsCache.version !== version) {
+          // Cold path: recompute and cache. This is the only place the expensive
+          // scan runs; subsequent visits with unchanged data are instant.
+          this.metricsCache = { version, data: getMetricsData(db) };
+        }
+        this.post({ type: 'metrics', data: this.metricsCache.data });
         break;
+      }
       case 'getLogs':
         this.post({ type: 'logs', data: getLogs(db, {
           filter:      msg.filter,

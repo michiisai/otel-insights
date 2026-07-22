@@ -5,11 +5,17 @@ import type { QueryableDB } from '@otel-insights/types';
 
 // Rebuilds the flat, dotted-key attributes object the engine expects
 // (e.g. {"gen_ai.request.model":"gpt-4o"}) from an OTLP attribute array
-// [{key, value:{stringValue|intValue|...}}] at `arrPath` inside `e.raw`.
+// [{key, value:{stringValue|intValue|...}}] at `arrPath` inside `rawExpr`.
 // Array values (e.g. gen_ai.response.finish_reasons -> ["end_turn"]) are
 // preserved as a nested JSON array of their scalar elements; kvlist/bytes
 // values collapse to null (no engine query relies on them).
-const flatAttrs = (arrPath: string): string => `
+//
+// PERF: this is expensive (a correlated json_each aggregation per row). It is
+// evaluated exactly ONCE per row — at insert time (and once during backfill) —
+// and the result is stored in the raw table's `attributes` column, so read
+// queries never recompute it. `rawExpr` is the SQL expression holding the raw
+// JSON (e.g. a bound `:raw` parameter on insert, or `raw_spans.raw` on backfill).
+const flatAttrs = (rawExpr: string, arrPath: string): string => `
     (SELECT COALESCE(json_group_object(
        json_extract(a.value, '$.key'),
        CASE
@@ -30,47 +36,67 @@ const flatAttrs = (arrPath: string): string => `
          )
        END
      ), '{}')
-     FROM json_each(COALESCE(json_extract(e.raw, '${arrPath}'), '[]')) a)`;
+     FROM json_each(COALESCE(json_extract(${rawExpr}, '${arrPath}'), '[]')) a)`;
 
-// Extracts service.name from the resource attributes inside `e.raw`.
-const SERVICE_NAME = `
+// Extracts service.name from the resource attributes inside `rawExpr`.
+// Materialized alongside `attributes` (see above) — computed once per row.
+const serviceName = (rawExpr: string): string => `
     (SELECT COALESCE(json_extract(r.value, '$.value.stringValue'), '')
-     FROM json_each(COALESCE(json_extract(e.raw, '$.resource.attributes'), '[]')) r
+     FROM json_each(COALESCE(json_extract(${rawExpr}, '$.resource.attributes'), '[]')) r
      WHERE json_extract(r.value, '$.key') = 'service.name'
      LIMIT 1)`;
 
+// The OTLP attribute-array path within each entity's raw JSON.
+const ATTR_PATH = {
+  raw_spans:   '$.span.attributes',
+  raw_metrics: '$.dataPoint.attributes',
+  raw_logs:    '$.logRecord.attributes',
+} as const;
+
 // Raw tables are the single source of truth: each row stores one full,
 // self-contained OTLP entity ({ resource, scope, <entity> }) as JSON in `raw`.
-// The `spans` / `logs` / `metric_points` VIEWS derive the columns the engine
-// queries — nothing is duplicated. Expression indexes back the hot filters.
-const SCHEMA = `
+// Two derived columns — `attributes` (flattened, dotted-key JSON) and
+// `service_name` — are materialized at insert time so read queries never pay
+// the flatAttrs recomputation cost. Everything else is derived cheaply by the
+// VIEWS below. Expression indexes back the hot filters.
+const SCHEMA_TABLES = `
 CREATE TABLE IF NOT EXISTS raw_spans (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  raw        TEXT    NOT NULL,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  raw          TEXT    NOT NULL,
+  attributes   TEXT,
+  service_name TEXT,
+  created_at   INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_spans_spanid ON raw_spans(json_extract(raw, '$.span.spanId'));
 CREATE INDEX IF NOT EXISTS idx_raw_spans_trace ON raw_spans(json_extract(raw, '$.span.traceId'));
 CREATE INDEX IF NOT EXISTS idx_raw_spans_start ON raw_spans(json_extract(raw, '$.span.startTimeUnixNano'));
 
 CREATE TABLE IF NOT EXISTS raw_metrics (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  raw        TEXT    NOT NULL,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  raw          TEXT    NOT NULL,
+  attributes   TEXT,
+  service_name TEXT,
+  created_at   INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE INDEX IF NOT EXISTS idx_raw_metrics_name ON raw_metrics(json_extract(raw, '$.metric.name'));
 CREATE INDEX IF NOT EXISTS idx_raw_metrics_ts   ON raw_metrics(json_extract(raw, '$.dataPoint.timeUnixNano'));
 
 CREATE TABLE IF NOT EXISTS raw_logs (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  raw        TEXT    NOT NULL,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  raw          TEXT    NOT NULL,
+  attributes   TEXT,
+  service_name TEXT,
+  created_at   INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE INDEX IF NOT EXISTS idx_raw_logs_severity ON raw_logs(json_extract(raw, '$.logRecord.severityNumber'));
 CREATE INDEX IF NOT EXISTS idx_raw_logs_ts       ON raw_logs(json_extract(raw, '$.logRecord.timeUnixNano'));
+`;
 
--- Views are derived (no stored data), so drop-and-recreate on every init to
--- pick up definition changes on existing databases without touching raw_*.
+// Views are derived (no stored data), so drop-and-recreate on every init to
+// pick up definition changes on existing databases without touching raw_*.
+// The expensive `attributes` / `service_name` columns are read straight from
+// the materialized raw-table columns (e.attributes / e.service_name).
+const SCHEMA_VIEWS = `
 DROP VIEW IF EXISTS spans;
 DROP VIEW IF EXISTS metric_points;
 DROP VIEW IF EXISTS logs;
@@ -89,8 +115,8 @@ CREATE VIEW IF NOT EXISTS spans AS
      - CAST(COALESCE(json_extract(e.raw, '$.span.startTimeUnixNano'), '0') AS INTEGER)) / 1000000.0 AS duration_ms,
     COALESCE(json_extract(e.raw, '$.span.status.code'), 0) AS status_code,
     json_extract(e.raw, '$.span.status.message') AS status_message,
-    ${flatAttrs('$.span.attributes')} AS attributes,
-    ${SERVICE_NAME} AS service_name,
+    e.attributes   AS attributes,
+    e.service_name AS service_name,
     e.raw AS raw
   FROM raw_spans e;
 
@@ -104,9 +130,9 @@ CREATE VIEW IF NOT EXISTS metric_points AS
       json_extract(e.raw, '$.dataPoint.sum')
     ) AS value,
     COALESCE(json_extract(e.raw, '$.dataPoint.timeUnixNano'), '0') AS timestamp_unix_nano,
-    ${flatAttrs('$.dataPoint.attributes')} AS attributes,
+    e.attributes   AS attributes,
     json_extract(e.raw, '$.metric.unit') AS unit,
-    ${SERVICE_NAME} AS service_name,
+    e.service_name AS service_name,
     e.raw AS raw
   FROM raw_metrics e;
 
@@ -119,10 +145,10 @@ CREATE VIEW IF NOT EXISTS logs AS
     COALESCE(json_extract(e.raw, '$.logRecord.severityText'), '')  AS severity_text,
     COALESCE(json_extract(e.raw, '$.logRecord.body.stringValue'),
              json_extract(e.raw, '$.logRecord.body'), '') AS body,
-    ${flatAttrs('$.logRecord.attributes')} AS attributes,
+    e.attributes   AS attributes,
     json_extract(e.raw, '$.logRecord.traceId') AS trace_id,
     json_extract(e.raw, '$.logRecord.spanId')  AS span_id,
-    ${SERVICE_NAME} AS service_name,
+    e.service_name AS service_name,
     e.raw AS raw
   FROM raw_logs e;
 `;
@@ -192,6 +218,8 @@ export class TelemetryStore {
   private sqlDb!: SqlJs.Database;
   private adapter!: DatabaseAdapter;
   private saveTimer?: ReturnType<typeof setInterval>;
+  // Monotonic counter bumped whenever stored data changes. 
+  private dataVersion = 0;
 
   constructor(private readonly dbPath: string) {}
 
@@ -211,14 +239,47 @@ export class TelemetryStore {
 
     this.dropLegacyTables();
 
-    // Run schema (sql.js only supports one statement per run() call)
-    for (const stmt of SCHEMA.split(';').map(s => s.trim()).filter(Boolean)) {
+    // 1) Raw tables + indexes.
+    for (const stmt of SCHEMA_TABLES.split(';').map(s => s.trim()).filter(Boolean)) {
+      this.sqlDb.run(stmt);
+    }
+    // 2) Migrate existing databases: add the materialized derived columns if
+    //    they're missing, then backfill any rows that predate them.
+    this.ensureDerivedColumns();
+    this.backfillDerivedColumns();
+    // 3) Views (read the materialized columns; safe now that they exist).
+    for (const stmt of SCHEMA_VIEWS.split(';').map(s => s.trim()).filter(Boolean)) {
       this.sqlDb.run(stmt);
     }
 
     this.adapter = new DatabaseAdapter(this.sqlDb);
     // Persist to disk every 30 s to survive crashes.
     this.saveTimer = setInterval(() => this.flush(), 30_000);
+  }
+
+  // Adds the materialized `attributes` / `service_name` columns to raw tables
+  // that predate them (older extension versions). No-op once present.
+  private ensureDerivedColumns(): void {
+    for (const table of ['raw_spans', 'raw_metrics', 'raw_logs']) {
+      const info = this.sqlDb.exec(`PRAGMA table_info(${table})`)[0];
+      const cols = new Set((info?.values ?? []).map(v => String(v[1])));
+      if (!cols.has('attributes'))   { this.sqlDb.run(`ALTER TABLE ${table} ADD COLUMN attributes TEXT`); }
+      if (!cols.has('service_name')) { this.sqlDb.run(`ALTER TABLE ${table} ADD COLUMN service_name TEXT`); }
+    }
+  }
+
+  // One-time backfill of the materialized columns for legacy rows (attributes
+  // IS NULL). New rows populate these columns at insert time, so this matches
+  // nothing on subsequent runs.
+  private backfillDerivedColumns(): void {
+    for (const [table, arrPath] of Object.entries(ATTR_PATH)) {
+      this.sqlDb.run(
+        `UPDATE ${table} SET
+           attributes   = ${flatAttrs(`${table}.raw`, arrPath)},
+           service_name = ${serviceName(`${table}.raw`)}
+         WHERE attributes IS NULL`,
+      );
+    }
   }
 
   // Drops legacy layouts left by earlier extension versions.
@@ -238,37 +299,56 @@ export class TelemetryStore {
     return this.adapter;
   }
 
+  /** Current data version. Increments on every insert/clear that changes data. */
+  getDataVersion(): number {
+    return this.dataVersion;
+  }
+
   // ── Writes ──────────────────────────────────────────────────────────────────
 
   insertSpans(rows: SpanRow[]): void {
     if (!rows.length) { return; }
     this.adapter.runInTransaction(rows, (db, rs) => {
       // INSERT OR IGNORE dedupes by span_id via the unique expression index.
-      const s = db.prepare(`INSERT OR IGNORE INTO raw_spans (raw) VALUES (?)`);
-      for (const r of rs) { s.run([r.raw]); }
+      // `attributes` / `service_name` are materialized once, here, so read
+      // queries never recompute the expensive flatAttrs aggregation.
+      const s = db.prepare(
+        `INSERT OR IGNORE INTO raw_spans (raw, attributes, service_name)
+         VALUES (:raw, ${flatAttrs(':raw', ATTR_PATH.raw_spans)}, ${serviceName(':raw')})`,
+      );
+      for (const r of rs) { s.run({ ':raw': r.raw }); }
       s.free();
     });
     this.pruneTable('raw_spans', MAX_SPANS);
+    this.dataVersion++;
   }
 
   insertMetrics(rows: MetricRow[]): void {
     if (!rows.length) { return; }
     this.adapter.runInTransaction(rows, (db, rs) => {
-      const s = db.prepare(`INSERT INTO raw_metrics (raw) VALUES (?)`);
-      for (const r of rs) { s.run([r.raw]); }
+      const s = db.prepare(
+        `INSERT INTO raw_metrics (raw, attributes, service_name)
+         VALUES (:raw, ${flatAttrs(':raw', ATTR_PATH.raw_metrics)}, ${serviceName(':raw')})`,
+      );
+      for (const r of rs) { s.run({ ':raw': r.raw }); }
       s.free();
     });
     this.pruneTable('raw_metrics', MAX_METRICS);
+    this.dataVersion++;
   }
 
   insertLogs(rows: LogRow[]): void {
     if (!rows.length) { return; }
     this.adapter.runInTransaction(rows, (db, rs) => {
-      const s = db.prepare(`INSERT INTO raw_logs (raw) VALUES (?)`);
-      for (const r of rs) { s.run([r.raw]); }
+      const s = db.prepare(
+        `INSERT INTO raw_logs (raw, attributes, service_name)
+         VALUES (:raw, ${flatAttrs(':raw', ATTR_PATH.raw_logs)}, ${serviceName(':raw')})`,
+      );
+      for (const r of rs) { s.run({ ':raw': r.raw }); }
       s.free();
     });
     this.pruneTable('raw_logs', MAX_LOGS);
+    this.dataVersion++;
   }
 
   /**
@@ -288,6 +368,7 @@ export class TelemetryStore {
     for (const tbl of ['raw_spans', 'raw_metrics', 'raw_logs']) {
       this.sqlDb.run(`DELETE FROM ${tbl}`);
     }
+    this.dataVersion++;
     this.flush();
   }
 

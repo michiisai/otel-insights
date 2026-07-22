@@ -69,10 +69,16 @@
   let currentSpanNode = null;
 
   // ── Tab switching ─────────────────────────────────────────────────────────────
+  /** Pending debounced Home metrics fetch (cancelled if you leave Home first). */
+  let homeFetchTimer = null;
+
   /** Activate a top-level panel and load its data. Driven by the native
    *  activity-bar sidebar via the 'switchTab' message from the extension host. */
   function switchTab(/** @type {string} */ name) {
     if (!name) { return; }
+    // Cancel any pending Home fetch so flipping through Home doesn't trigger the
+    // expensive metrics scan (which blocks the synchronous extension host).
+    if (homeFetchTimer) { clearTimeout(homeFetchTimer); homeFetchTimer = null; }
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     const panel = $(`${name}-panel`);
     if (panel) { panel.classList.add('active'); }
@@ -81,7 +87,15 @@
   }
 
   function loadCurrentTab() {
-    if (activeTab === 'home')             { vscode.postMessage({ type: 'getMetrics' }); }
+    if (activeTab === 'home') {
+      // Debounced: only fetch if the user actually lingers on Home. Quick
+      // pass-throughs never fire the costly getMetrics query.
+      if (homeFetchTimer) { clearTimeout(homeFetchTimer); }
+      homeFetchTimer = setTimeout(() => {
+        homeFetchTimer = null;
+        if (activeTab === 'home') { vscode.postMessage({ type: 'getMetrics' }); }
+      }, 250);
+    }
     else if (activeTab === 'traces')      { vscode.postMessage({ type: 'getServices' }); fetchTraces(); }
     else if (activeTab === 'logs')        { vscode.postMessage({ type: 'getLogServices' }); fetchLogs(); }
     // 'sessions' and 'metrics' are placeholders for now — no data fetch.
