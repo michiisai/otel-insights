@@ -221,6 +221,12 @@ const MAX_SPANS   = 50_000;
 const MAX_METRICS = 50_000;
 const MAX_LOGS    = 50_000;
 
+// Guaranteed rows retained *per service_name*, protected from the global cap above.
+// This stops a high-volume source (e.g. Copilot) from evicting a low-volume one
+// (e.g. Claude Code) just because the quiet source's rows are older — which would
+// otherwise bias agent-comparison views against whichever agent was used less.
+const PER_SERVICE_FLOOR = 5_000;
+
 export class TelemetryStore {
   private sqlDb!: SqlJs.Database;
   private adapter!: DatabaseAdapter;
@@ -359,15 +365,34 @@ export class TelemetryStore {
   }
 
   /**
-   * Deletes the oldest rows in `table` (by autoincrement `id`, i.e. insertion order)
-   * once its row count exceeds `maxRows`, keeping only the most recent `maxRows` rows.
+   * Bounds `table`'s size after an insert using two rules:
+   *
+   *   1. **Global recency cap** — keep the newest `maxRows` rows overall (by
+   *      autoincrement `id`, i.e. insertion order).
+   *   2. **Per-service floor** — additionally keep the newest `PER_SERVICE_FLOOR`
+   *      rows of *each* `service_name`, even if they fall outside the global cap.
+   *
+   * A row survives if it satisfies *either* rule. The floor guarantees a
+   * low-volume source (e.g. Claude Code) retains its most recent data instead of
+   * being evicted purely for being older than a noisier source's stream — which
+   * would otherwise starve agent-comparison views of the quieter agent's metrics.
+   * Total growth stays bounded at roughly `maxRows + PER_SERVICE_FLOOR * <#services>`.
    */
   private pruneTable(table: 'raw_spans' | 'raw_metrics' | 'raw_logs', maxRows: number): void {
     const countRow = this.sqlDb.exec(`SELECT COUNT(*) AS c FROM ${table}`)[0];
     const count = Number(countRow?.values?.[0]?.[0] ?? 0);
     if (count <= maxRows) { return; }
     this.sqlDb.run(
-      `DELETE FROM ${table} WHERE id NOT IN (SELECT id FROM ${table} ORDER BY id DESC LIMIT ${maxRows})`,
+      `DELETE FROM ${table}
+       WHERE id NOT IN (SELECT id FROM ${table} ORDER BY id DESC LIMIT ${maxRows})
+         AND id NOT IN (
+           SELECT id FROM (
+             SELECT id, ROW_NUMBER() OVER (
+               PARTITION BY COALESCE(service_name, '') ORDER BY id DESC
+             ) AS rn
+             FROM ${table}
+           ) WHERE rn <= ${PER_SERVICE_FLOOR}
+         )`,
     );
   }
 
