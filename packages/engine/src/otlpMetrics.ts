@@ -1,0 +1,170 @@
+import type { QueryableDB, MetricInstrument, MetricDetail, MetricDimension, MetricSeriesPoint } from '@otel-insights/types';
+
+// OTLP metrics are stored one data point per row in raw_metrics; the
+// `metric_points` view (store.ts) exposes the queryable columns, including the
+// materialized flat `attributes` object and histogram fields (count/sum/min/max).
+//
+// IMPORTANT — cumulative temporality: Copilot/GenAI metrics are cumulative
+// (aggregationTemporality = 2), so each data point holds a RUNNING TOTAL for its
+// series (a series = one unique attribute combination). To get correct lifetime
+// totals we take the LATEST point per series and aggregate across series — never
+// SUM every point (that would multiply-count the running totals).
+
+const CUMULATIVE = 2;
+
+/** All metric instruments, aggregated across their data points. */
+export function getMetricInstruments(db: QueryableDB): MetricInstrument[] {
+  const rows = db.prepare(`
+    SELECT
+      name,
+      metric_type,
+      COALESCE(unit, '')         AS unit,
+      COALESCE(service_name, '') AS service_name,
+      COUNT(*)                   AS point_count,
+      COUNT(DISTINCT attributes) AS series_count,
+      MAX(CAST(timestamp_unix_nano AS INTEGER)) AS last_ts
+    FROM metric_points
+    GROUP BY name, metric_type, unit, service_name
+    ORDER BY service_name, name
+  `).all();
+
+  return rows.map(r => ({
+    name:              String(r['name']         ?? ''),
+    metricType:        String(r['metric_type']  ?? ''),
+    unit:              String(r['unit']         ?? ''),
+    serviceName:       String(r['service_name'] ?? ''),
+    pointCount:        Number(r['point_count']  ?? 0),
+    seriesCount:       Number(r['series_count'] ?? 0),
+    lastTimestampNano: String(r['last_ts']      ?? '0'),
+  }));
+}
+
+/** Detail for one metric instrument: lifetime stats, a time-series, and a
+ *  per-attribute breakdown. */
+export function getMetricDetail(db: QueryableDB, name: string, serviceName: string): MetricDetail {
+  const meta = db.prepare(`
+    SELECT metric_type, COALESCE(unit, '') AS unit, temporality
+    FROM metric_points WHERE name = ? AND service_name = ? LIMIT 1
+  `).get(name, serviceName);
+
+  const metricType   = String(meta?.['metric_type'] ?? '');
+  const unit         = String(meta?.['unit'] ?? '');
+  const isCumulative = Number(meta?.['temporality'] ?? 0) === CUMULATIVE;
+
+  // Latest point per series (correct base for cumulative aggregation).
+  const latestCte = `
+    WITH latest AS (
+      SELECT mp.attributes, mp.value, mp.data_count, mp.data_sum, mp.data_min, mp.data_max
+      FROM metric_points mp
+      JOIN (
+        SELECT attributes, MAX(CAST(timestamp_unix_nano AS INTEGER)) AS mt
+        FROM metric_points WHERE name = ? AND service_name = ? GROUP BY attributes
+      ) L ON mp.attributes = L.attributes
+         AND CAST(mp.timestamp_unix_nano AS INTEGER) = L.mt
+      WHERE mp.name = ? AND mp.service_name = ?
+    )`;
+
+  const stat = db.prepare(`
+    ${latestCte}
+    SELECT
+      COUNT(*)        AS series_count,
+      SUM(data_count) AS total_count,
+      SUM(data_sum)   AS sum,
+      MIN(data_min)   AS min,
+      MAX(data_max)   AS max,
+      SUM(value)      AS total
+    FROM latest
+  `).get(name, serviceName, name, serviceName);
+
+  const totalCount = Number(stat?.['total_count'] ?? 0);
+  const sum        = Number(stat?.['sum'] ?? 0);
+
+  // Per-attribute breakdown. `attributes` is already a flat {key:value} object,
+  // so json_each yields one row per dimension.
+  const dimRows = db.prepare(`
+    ${latestCte}
+    SELECT
+      j.key   AS dim_key,
+      j.value AS dim_val,
+      SUM(COALESCE(latest.data_count, 1))            AS cnt,
+      SUM(COALESCE(latest.data_sum, latest.value, 0)) AS total
+    FROM latest, json_each(latest.attributes) j
+    GROUP BY dim_key, dim_val
+    ORDER BY dim_key ASC, cnt DESC
+  `).all(name, serviceName, name, serviceName);
+
+  const dimMap = new Map<string, MetricDimension>();
+  for (const r of dimRows) {
+    const key = String(r['dim_key'] ?? '');
+    if (!key) { continue; }
+    let dim = dimMap.get(key);
+    if (!dim) { dim = { key, values: [] }; dimMap.set(key, dim); }
+    dim.values.push({
+      value: String(r['dim_val'] ?? ''),
+      count: Number(r['cnt']     ?? 0),
+      total: Number(r['total']   ?? 0),
+    });
+  }
+  // Show the most descriptive dimensions first (most distinct values), cap noise.
+  const dimensions = Array.from(dimMap.values())
+    .sort((a, b) => b.values.length - a.values.length)
+    .map(d => ({ ...d, values: d.values.slice(0, 20) }));
+
+  // Time-series: raw data-point values over time, bucketed + averaged in JS so
+  // the chart stays light regardless of how many points exist.
+  const points = db.prepare(`
+    SELECT CAST(timestamp_unix_nano AS INTEGER) AS t_ns, value
+    FROM metric_points
+    WHERE name = ? AND service_name = ? AND value IS NOT NULL
+    ORDER BY t_ns ASC
+  `).all(name, serviceName);
+
+  const series = bucketSeries(
+    points.map(p => ({ t: Number(p['t_ns'] ?? 0) / 1e6, value: Number(p['value'] ?? 0) })),
+    80,
+  );
+
+  return {
+    name,
+    serviceName,
+    metricType,
+    unit,
+    isCumulative,
+    stats: {
+      seriesCount: Number(stat?.['series_count'] ?? 0),
+      totalCount,
+      sum,
+      avg: totalCount > 0 ? sum / totalCount : 0,
+      min: Number(stat?.['min'] ?? 0),
+      max: Number(stat?.['max'] ?? 0),
+      total: Number(stat?.['total'] ?? 0),
+    },
+    series,
+    dimensions,
+  };
+}
+
+/** Collapse an ordered point list into at most `maxBuckets` time-bucketed
+ *  averages (keeps the chart cheap and readable). */
+function bucketSeries(points: MetricSeriesPoint[], maxBuckets: number): MetricSeriesPoint[] {
+  if (points.length <= maxBuckets) { return points; }
+  const first = points[0]!.t;
+  const last  = points[points.length - 1]!.t;
+  const span  = last - first || 1;
+  const width = span / maxBuckets;
+
+  const sums   = new Array<number>(maxBuckets).fill(0);
+  const counts = new Array<number>(maxBuckets).fill(0);
+  for (const p of points) {
+    const idx = Math.min(maxBuckets - 1, Math.floor((p.t - first) / width));
+    sums[idx]   += p.value;
+    counts[idx] += 1;
+  }
+  const out: MetricSeriesPoint[] = [];
+  for (let i = 0; i < maxBuckets; i++) {
+    if (counts[i]! > 0) {
+      out.push({ t: first + width * (i + 0.5), value: sums[i]! / counts[i]! });
+    }
+  }
+  return out;
+}

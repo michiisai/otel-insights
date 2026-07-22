@@ -124,11 +124,18 @@ CREATE VIEW IF NOT EXISTS metric_points AS
   SELECT
     e.id AS id,
     json_extract(e.raw, '$.metric.name') AS name,
+    json_extract(e.raw, '$.metricType')  AS metric_type,
     COALESCE(
       json_extract(e.raw, '$.dataPoint.asDouble'),
       CAST(json_extract(e.raw, '$.dataPoint.asInt') AS REAL),
       json_extract(e.raw, '$.dataPoint.sum')
     ) AS value,
+    -- Histogram-specific fields (NULL for gauges/sums).
+    CAST(json_extract(e.raw, '$.dataPoint.count') AS REAL) AS data_count,
+    CAST(json_extract(e.raw, '$.dataPoint.sum')   AS REAL) AS data_sum,
+    CAST(json_extract(e.raw, '$.dataPoint.min')   AS REAL) AS data_min,
+    CAST(json_extract(e.raw, '$.dataPoint.max')   AS REAL) AS data_max,
+    COALESCE(json_extract(e.raw, '$.aggregation.aggregationTemporality'), 0) AS temporality,
     COALESCE(json_extract(e.raw, '$.dataPoint.timeUnixNano'), '0') AS timestamp_unix_nano,
     e.attributes   AS attributes,
     json_extract(e.raw, '$.metric.unit') AS unit,

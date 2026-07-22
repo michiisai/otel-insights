@@ -104,6 +104,49 @@ export interface QueryableDB {
   exec(sql: string): void;
 }
 
+/** One OTLP metric instrument (aggregated across its time-series/data points). */
+export interface MetricInstrument {
+  name: string;
+  metricType: string;   // 'histogram' | 'sum' | 'gauge' | ...
+  unit: string;
+  serviceName: string;
+  pointCount: number;   // total stored data points
+  seriesCount: number;  // distinct attribute combinations
+  lastTimestampNano: string;
+}
+
+/** A single point on a metric's time-series chart (t = epoch ms). */
+export interface MetricSeriesPoint {
+  t: number;
+  value: number;
+}
+
+/** Breakdown of a metric by one attribute key (e.g. by model / tool). */
+export interface MetricDimension {
+  key: string;
+  values: Array<{ value: string; count: number; total: number }>;
+}
+
+/** Detail for a single selected metric instrument. */
+export interface MetricDetail {
+  name: string;
+  serviceName: string;
+  metricType: string;
+  unit: string;
+  isCumulative: boolean;
+  stats: {
+    seriesCount: number;
+    totalCount: number;  // lifetime observations (histograms)
+    sum: number;
+    avg: number;
+    min: number;
+    max: number;
+    total: number;       // summed latest value (counters/gauges)
+  };
+  series: MetricSeriesPoint[];      // raw data-point values over time (downsampled)
+  dimensions: MetricDimension[];    // breakdown by each attribute key
+}
+
 /** Messages sent from the webview to the extension host. */
 export type WebviewToExtension =
   | { type: 'ready' }
@@ -112,6 +155,8 @@ export type WebviewToExtension =
   | { type: 'getLogServices' }
   | { type: 'getSpans'; traceId: string }
   | { type: 'getMetrics' }
+  | { type: 'getMetricInstruments' }
+  | { type: 'getMetricDetail'; name: string; serviceName: string }
   | { type: 'getLogs'; filter?: string; excludes?: string[]; sinceNano?: string; untilNano?: string; minSeverity?: number; serviceName?: string; sortOrder?: 'asc' | 'desc' }
   | { type: 'clearData' }
   | { type: 'addItemsToChat'; traces: Record<string, unknown>[]; spans: Record<string, unknown>[] };
@@ -123,6 +168,8 @@ export type ExtensionToWebview =
   | { type: 'logServices'; data: string[] }
   | { type: 'spans'; traceId: string; data: Span[] }
   | { type: 'metrics'; data: MetricsData }
+  | { type: 'metricInstruments'; data: MetricInstrument[] }
+  | { type: 'metricDetail'; data: MetricDetail }
   | { type: 'logs'; data: LogRecord[] }
   | { type: 'status'; connected: boolean; port: number }
   | { type: 'cleared' }

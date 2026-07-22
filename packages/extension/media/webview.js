@@ -45,6 +45,9 @@
   const logTimeSortIcon = $('log-time-sort-icon');
   const logServiceFilterBtn      = $('log-service-filter-btn');
   const logServiceFilterDropdown = $('log-service-filter-dropdown');
+  const metricsList      = $('metrics-list');
+  const metricDetailPanel = $('metric-detail-panel');
+  const metricFilter     = /** @type {HTMLInputElement} */ ($('metric-filter'));
 
   /** @type {string} currently selected service filter */
   let selectedService = '';
@@ -56,6 +59,10 @@
   let logTimeSortOrder = 'desc';
 
   let errorsOnly = false;
+  /** @type {any[]} */
+  let currentInstruments = [];
+  /** Currently selected metric instrument key (name|service), or null. */
+  let selectedMetricKey = null;
   /** @type {any[]} */
   let currentLogs = [];
   /** Index of the currently selected log row (-1 = none) */
@@ -98,7 +105,8 @@
     }
     else if (activeTab === 'traces')      { vscode.postMessage({ type: 'getServices' }); fetchTraces(); }
     else if (activeTab === 'logs')        { vscode.postMessage({ type: 'getLogServices' }); fetchLogs(); }
-    // 'sessions' and 'metrics' are placeholders for now — no data fetch.
+    else if (activeTab === 'metrics')     { vscode.postMessage({ type: 'getMetricInstruments' }); }
+    // 'sessions' is a placeholder for now — no data fetch.
   }
 
   /** Switch to Traces tab, filter to the given trace ID, and optionally highlight a span */
@@ -391,6 +399,51 @@
       e.preventDefault();
     });
   }());
+
+  // ── Metrics panel resize ──────────────────────────────────────────────────────
+  (function initMetricsResizer() {
+    const divider    = $('metrics-divider');
+    const rightPanel = $('metric-detail-panel');
+    const split      = divider?.parentElement;
+    if (!divider || !rightPanel || !split) { return; }
+
+    const divEl   = /** @type {HTMLElement} */ (divider);
+    const rightEl = /** @type {HTMLElement} */ (rightPanel);
+    const splitEl = /** @type {HTMLElement} */ (split);
+
+    let startX = 0;
+    let startW = 0;
+
+    divEl.addEventListener('mousedown', e => {
+      startX = e.clientX;
+      startW = rightEl.getBoundingClientRect().width;
+      divEl.classList.add('dragging');
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+
+      function onMove(/** @type {MouseEvent} */ ev) {
+        const delta  = startX - ev.clientX;
+        const splitW = splitEl.getBoundingClientRect().width;
+        const newW   = Math.min(Math.max(startW + delta, splitW * 0.25), splitW * 0.65);
+        rightEl.style.width = `${newW}px`;
+      }
+
+      function onUp() {
+        divEl.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      e.preventDefault();
+    });
+  }());
+
+  metricFilter && metricFilter.addEventListener('input', () => renderMetricList());
+
   window.addEventListener('message', event => {
     const msg = event.data;
     switch (msg.type) {
@@ -400,6 +453,8 @@
       case 'logServices': renderLogServices(msg.data);           break;
       case 'spans':    renderSpans(msg.traceId, msg.data);   break;
       case 'metrics': renderMetrics(msg.data);              break;
+      case 'metricInstruments': renderMetricInstruments(msg.data); break;
+      case 'metricDetail':      renderMetricDetail(msg.data);      break;
       case 'logs':    renderLogs(msg.data);                 break;
       case 'cleared':
         selectedTraceIds.clear();
@@ -1065,6 +1120,194 @@
         ${attrsHtml}
       </div>
     `;
+  }
+
+  // ── Metrics ───────────────────────────────────────────────────────────────────
+  const METRIC_ICON = { histogram: '📊', sum: '#️⃣', gauge: '📈' };
+
+  function renderMetricInstruments(/** @type {any[]} */ instruments) {
+    currentInstruments = instruments || [];
+    renderMetricList();
+  }
+
+  /** Render the (optionally filtered) instrument list in the left rail. */
+  function renderMetricList() {
+    if (!metricsList) { return; }
+    if (!currentInstruments.length) {
+      metricsList.innerHTML = '<div class="empty-state">No metrics yet.<br><small>Ingested OTLP metrics appear here.</small></div>';
+      return;
+    }
+    const q = (metricFilter?.value || '').trim().toLowerCase();
+    const items = q
+      ? currentInstruments.filter(i => i.name.toLowerCase().includes(q) || i.serviceName.toLowerCase().includes(q))
+      : currentInstruments;
+
+    if (!items.length) {
+      metricsList.innerHTML = '<div class="empty-state small">No metrics match the filter.</div>';
+      return;
+    }
+
+    // Group by service for readability.
+    /** @type {Map<string, any[]>} */
+    const byService = new Map();
+    for (const i of items) {
+      if (!byService.has(i.serviceName)) { byService.set(i.serviceName, []); }
+      byService.get(i.serviceName).push(i);
+    }
+
+    let html = '';
+    for (const [svc, list] of byService) {
+      html += `<div class="metric-group-hdr">${esc(svc || 'unknown')}</div>`;
+      for (const i of list) {
+        const key    = `${i.name}|${i.serviceName}`;
+        const active = key === selectedMetricKey ? ' active' : '';
+        const icon   = METRIC_ICON[i.metricType] || '•';
+        const unit   = i.unit ? `<span class="metric-unit">${esc(i.unit)}</span>` : '';
+        html += `
+          <div class="metric-row${active}" data-name="${esc(i.name)}" data-service="${esc(i.serviceName)}" title="${esc(i.name)}">
+            <span class="metric-icon" title="${esc(i.metricType)}">${icon}</span>
+            <span class="metric-name">${esc(i.name)}${unit}</span>
+            <span class="metric-count">${fmtNum(i.seriesCount)} series</span>
+          </div>`;
+      }
+    }
+    metricsList.innerHTML = html;
+
+    metricsList.querySelectorAll('.metric-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const el = /** @type {HTMLElement} */ (row);
+        selectMetric(el.dataset.name || '', el.dataset.service || '');
+      });
+    });
+  }
+
+  function selectMetric(/** @type {string} */ name, /** @type {string} */ service) {
+    selectedMetricKey = `${name}|${service}`;
+    metricsList?.querySelectorAll('.metric-row').forEach(r => {
+      const el = /** @type {HTMLElement} */ (r);
+      r.classList.toggle('active', `${el.dataset.name}|${el.dataset.service}` === selectedMetricKey);
+    });
+    if (metricDetailPanel) {
+      metricDetailPanel.innerHTML = '<div class="span-detail-placeholder">Loading…</div>';
+    }
+    vscode.postMessage({ type: 'getMetricDetail', name, serviceName: service });
+  }
+
+  function renderMetricDetail(/** @type {any} */ d) {
+    if (!metricDetailPanel) { return; }
+    // Ignore late responses for a metric the user has navigated away from.
+    if (selectedMetricKey && `${d.name}|${d.serviceName}` !== selectedMetricKey) { return; }
+
+    const isHist = d.metricType === 'histogram';
+    const u      = d.unit ? ` <span class="metric-unit">${esc(d.unit)}</span>` : '';
+
+    /** @param {string} label @param {string} val */
+    const card = (label, val) =>
+      `<div class="summary-item"><span class="summary-val">${val}</span><span class="summary-lbl">${label}</span></div>`;
+
+    const stats = d.stats;
+    let cards = '';
+    cards += card('Series', fmtNum(stats.seriesCount));
+    if (isHist) {
+      cards += card('Count', fmtNum(stats.totalCount));
+      cards += card('Sum', fmtMetricVal(stats.sum));
+      cards += card('Avg', fmtMetricVal(stats.avg));
+      cards += card('Min', fmtMetricVal(stats.min));
+      cards += card('Max', fmtMetricVal(stats.max));
+    } else {
+      cards += card('Total', fmtMetricVal(stats.total));
+    }
+
+    const chart = buildSparkline(d.series);
+    const cumulativeNote = d.isCumulative
+      ? '<span class="metric-note" title="Copilot metrics are cumulative — values are running totals; rate/delta views come later.">cumulative</span>'
+      : '';
+
+    let dims = '';
+    if (d.dimensions && d.dimensions.length) {
+      dims = d.dimensions.map((/** @type {any} */ dim) => {
+        const rows = dim.values.map((/** @type {any} */ v) => [
+          `<span class="name-cell" title="${esc(v.value)}">${esc(v.value)}</span>`,
+          fmtNum(v.count),
+        ]);
+        return `<div class="metric-dim">
+            <div class="metric-dim-hdr">${esc(dim.key)}</div>
+            ${table(['Value', 'Count'], rows)}
+          </div>`;
+      }).join('');
+    } else {
+      dims = '<div class="empty-state small">No attribute dimensions.</div>';
+    }
+
+    metricDetailPanel.innerHTML = `
+      <div class="metric-detail-content">
+        <div class="metric-detail-title">
+          <span class="metric-icon">${METRIC_ICON[d.metricType] || '•'}</span>
+          <span class="metric-detail-name">${esc(d.name)}${u}</span>
+          ${cumulativeNote}
+        </div>
+        <div class="metric-detail-sub">${esc(d.serviceName)} · ${esc(d.metricType)}</div>
+
+        <div class="summary-section">
+          <div class="summary-row">${cards}</div>
+        </div>
+
+        <div class="metric-chart-section">
+          <div class="metric-section-lbl">Values over time${d.isCumulative ? ' (cumulative)' : ''}</div>
+          ${chart}
+        </div>
+
+        <div class="metric-dims-section">
+          <div class="metric-section-lbl">Breakdown by attribute</div>
+          ${dims}
+        </div>
+      </div>`;
+  }
+
+  /** Format a metric value compactly (whole numbers vs fractional). */
+  function fmtMetricVal(/** @type {number} */ n) {
+    if (n === 0) { return '0'; }
+    if (Math.abs(n) >= 1000) { return fmtNum(n); }
+    if (Number.isInteger(n)) { return String(n); }
+    return n.toFixed(Math.abs(n) < 1 ? 3 : 2);
+  }
+
+  /** Hand-rolled inline SVG line chart (no external chart lib under CSP). */
+  function buildSparkline(/** @type {{t:number,value:number}[]} */ series) {
+    if (!series || series.length < 2) {
+      return '<div class="empty-state small">Not enough data points to chart.</div>';
+    }
+    const W = 640, H = 160, padL = 8, padR = 8, padT = 12, padB = 20;
+    const xs = series.map(p => p.t);
+    const ys = series.map(p => p.value);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const spanX = (maxX - minX) || 1;
+    const spanY = (maxY - minY) || 1;
+
+    const px = (/** @type {number} */ x) => padL + ((x - minX) / spanX) * (W - padL - padR);
+    const py = (/** @type {number} */ y) => (H - padB) - ((y - minY) / spanY) * (H - padT - padB);
+
+    const pts  = series.map(p => `${px(p.t).toFixed(1)},${py(p.value).toFixed(1)}`);
+    const line = pts.join(' ');
+    const area = `${padL},${H - padB} ${line} ${(W - padR)},${H - padB}`;
+
+    const fmtT = (/** @type {number} */ ms) => {
+      const dt = new Date(ms);
+      const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
+      return `${pad(dt.getMonth() + 1)}/${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+    };
+
+    return `
+      <svg class="metric-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">
+        <polyline class="metric-chart-area" points="${area}" />
+        <polyline class="metric-chart-line" points="${line}" />
+      </svg>
+      <div class="metric-chart-axis">
+        <span>${esc(fmtMetricVal(maxY))}</span>
+        <span class="metric-chart-x">${esc(fmtT(minX))} → ${esc(fmtT(maxX))}</span>
+        <span>${esc(fmtMetricVal(minY))}</span>
+      </div>`;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 export { getTraces, getSpansByTraceId, getServices, GetTracesOptions } from './traces';
 export { getMetricsData, normalizeModelName } from './metrics';
+export { getMetricInstruments, getMetricDetail } from './otlpMetrics';
 export { getLogs } from './logs';
 export type { LogQueryOptions } from './logs';
 export { getRecentErrorTraces } from './errors';

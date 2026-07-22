@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { TelemetryStore } from '@otel-insights/receiver';
-import { getTraces, getSpansByTraceId, getServices, getMetricsData, getLogs, getLogServiceNames } from '@otel-insights/engine';
-import type { WebviewToExtension, ExtensionToWebview, TabId, MetricsData } from '@otel-insights/types';
+import { getTraces, getSpansByTraceId, getServices, getMetricsData, getLogs, getLogServiceNames, getMetricInstruments, getMetricDetail } from '@otel-insights/engine';
+import type { WebviewToExtension, ExtensionToWebview, TabId, MetricsData, MetricInstrument } from '@otel-insights/types';
 
 export class OtelInsightsPanel {
   static readonly viewType   = 'otelInsights';
@@ -17,6 +17,9 @@ export class OtelInsightsPanel {
    *  Avoids re-running the expensive metrics scan (which blocks the single
    *  synchronous extension host thread) when the data hasn't changed. */
   private metricsCache?: { version: number; data: MetricsData };
+  /** Cached OTLP metric instrument list, keyed by store data-version (the list
+   *  scans all metric points, so we avoid recomputing when data is unchanged). */
+  private instrumentsCache?: { version: number; data: MetricInstrument[] };
 
   private constructor(
     private readonly extensionUri: vscode.Uri,
@@ -120,6 +123,17 @@ export class OtelInsightsPanel {
         this.post({ type: 'metrics', data: this.metricsCache.data });
         break;
       }
+      case 'getMetricInstruments': {
+        const version = this.store.getDataVersion();
+        if (!this.instrumentsCache || this.instrumentsCache.version !== version) {
+          this.instrumentsCache = { version, data: getMetricInstruments(db) };
+        }
+        this.post({ type: 'metricInstruments', data: this.instrumentsCache.data });
+        break;
+      }
+      case 'getMetricDetail':
+        this.post({ type: 'metricDetail', data: getMetricDetail(db, msg.name, msg.serviceName) });
+        break;
       case 'getLogs':
         this.post({ type: 'logs', data: getLogs(db, {
           filter:      msg.filter,
@@ -279,9 +293,29 @@ export class OtelInsightsPanel {
     </div>
   </div>
 
-  <!-- Metrics tab (placeholder — OTLP metrics surfacing lands later, #52) -->
+  <!-- Metrics tab — OTLP metric instruments (#52) -->
   <div id="metrics-panel" class="panel" role="tabpanel">
-    <div class="empty-state">Metrics coming soon.<br><small>Ingested OTLP metrics will be charted here.</small></div>
+    <div class="metrics-split">
+      <!-- Left: instrument list -->
+      <div class="metrics-left">
+        <div class="metrics-toolbar">
+          <input id="metric-filter" type="text" placeholder="Filter metrics…" />
+        </div>
+        <div id="metrics-list" class="list-container">
+          <div class="empty-state">Loading metrics…</div>
+        </div>
+      </div>
+
+      <!-- Resize divider -->
+      <div class="metrics-divider" id="metrics-divider" title="Drag to resize"></div>
+
+      <!-- Right: metric detail -->
+      <div class="metrics-right" id="metric-detail-panel">
+        <div class="span-detail-placeholder">
+          ← Select a metric to view its details
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Logs tab -->
