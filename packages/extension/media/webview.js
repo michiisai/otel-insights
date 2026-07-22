@@ -8,7 +8,7 @@
   const vscode = acquireVsCodeApi();
 
   // ── State ────────────────────────────────────────────────────────────────────
-  let activeTab = 'traces';
+  let activeTab = 'home';
   /** @type {Set<string>} */
   const expandedTraces = new Set();
   /** @type {Set<string>} */
@@ -69,51 +69,30 @@
   let currentSpanNode = null;
 
   // ── Tab switching ─────────────────────────────────────────────────────────────
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => {
-        t.classList.remove('active');
-        t.setAttribute('aria-selected', 'false');
-      });
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-
-      tab.classList.add('active');
-      tab.setAttribute('aria-selected', 'true');
-      const name  = /** @type {HTMLElement} */ (tab).dataset.tab ?? '';
-      const panel = $(`${name}-panel`);
-      if (panel) { panel.classList.add('active'); }
-      activeTab = name;
-      loadCurrentTab();
-    });
-  });
+  /** Activate a top-level panel and load its data. Driven by the native
+   *  activity-bar sidebar via the 'switchTab' message from the extension host. */
+  function switchTab(/** @type {string} */ name) {
+    if (!name) { return; }
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    const panel = $(`${name}-panel`);
+    if (panel) { panel.classList.add('active'); }
+    activeTab = name;
+    loadCurrentTab();
+  }
 
   function loadCurrentTab() {
-    if (activeTab === 'traces')           { vscode.postMessage({ type: 'getServices' }); fetchTraces(); }
-    else if (activeTab === 'performance') { vscode.postMessage({ type: 'getMetrics' }); }
+    if (activeTab === 'home')             { vscode.postMessage({ type: 'getMetrics' }); }
+    else if (activeTab === 'traces')      { vscode.postMessage({ type: 'getServices' }); fetchTraces(); }
     else if (activeTab === 'logs')        { vscode.postMessage({ type: 'getLogServices' }); fetchLogs(); }
+    // 'sessions' and 'metrics' are placeholders for now — no data fetch.
   }
 
   /** Switch to Traces tab, filter to the given trace ID, and optionally highlight a span */
   function navigateToTrace(/** @type {string} */ traceId, /** @type {string|null} */ spanId = null) {
-    // Activate the traces tab button and panel
-    document.querySelectorAll('.tab').forEach(t => {
-      t.classList.remove('active');
-      t.setAttribute('aria-selected', 'false');
-    });
-    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-
-    const tracesTab   = document.querySelector('.tab[data-tab="traces"]');
-    const tracesPanel = $('traces-panel');
-    if (tracesTab)  { tracesTab.classList.add('active'); tracesTab.setAttribute('aria-selected', 'true'); }
-    if (tracesPanel) { tracesPanel.classList.add('active'); }
-    activeTab = 'traces';
-
-    // Set deeplink state so renderTraces/renderSpans can auto-expand + highlight
+    // Set deeplink + search first so switchTab's fetchTraces picks them up.
     pendingDeeplink = { traceId, spanId };
-
-    // Pre-fill the trace search with the trace ID and fetch
     if (traceSearch) { traceSearch.value = traceId; }
-    fetchTraces();
+    switchTab('traces');
   }
 
   function fetchTraces() {
@@ -417,6 +396,7 @@
         loadCurrentTab();
         break;
       case 'navigateToTrace': navigateToTrace(msg.traceId, msg.spanId ?? null); break;
+      case 'switchTab': switchTab(msg.tab); break;
     }
   });
 
@@ -1141,6 +1121,7 @@
   // ── Boot ──────────────────────────────────────────────────────────────────────
   renderChatSelection();
   vscode.postMessage({ type: 'ready' });
-  vscode.postMessage({ type: 'getServices' });
-  vscode.postMessage({ type: 'getTraces' });
+  // Load the default view (Home). A sidebar click will switchTab to another view
+  // once the webview reports 'ready' (the extension queues it if needed).
+  loadCurrentTab();
 }());

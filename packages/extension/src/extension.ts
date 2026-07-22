@@ -2,7 +2,9 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { TelemetryStore, OtlpReceiver } from '@otel-insights/receiver';
 import { OtelInsightsPanel } from './panel';
+import { OtelNavProvider } from './nav';
 import { registerTools } from './tools';
+import type { TabId } from '@otel-insights/types';
 
 let receiver: OtlpReceiver | undefined;
 let store: TelemetryStore | undefined;
@@ -37,6 +39,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   statusBarItem.show();
 
   context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('otelInsightsNav', new OtelNavProvider()),
+    vscode.commands.registerCommand('otel-insights.showTab', (tab: TabId) => {
+      OtelInsightsPanel.createOrShow(context.extensionUri, store!, port);
+      OtelInsightsPanel.currentPanel?.showTab(tab);
+    }),
     vscode.commands.registerCommand('otel-insights.openPanel', () => {
       OtelInsightsPanel.createOrShow(context.extensionUri, store!, port);
     }),

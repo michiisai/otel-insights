@@ -78,6 +78,7 @@ body {
 .tab:hover  { color: var(--fg); }
 .tab.active { color: var(--fg); border-color: var(--border); background: var(--bg); }
 
+.toolbar-title { font-weight: 600; font-size: 12px; color: var(--fg); letter-spacing: 0.2px; }
 .toolbar-right { display: flex; align-items: center; gap: 6px; }
 .toolbar-btn-group { display: flex; align-items: center; gap: 2px; }
 

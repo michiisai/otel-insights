@@ -127,4 +127,8 @@ export type ExtensionToWebview =
   | { type: 'status'; connected: boolean; port: number }
   | { type: 'cleared' }
   | { type: 'error'; message: string }
-  | { type: 'navigateToTrace'; traceId: string; spanId?: string };
+  | { type: 'navigateToTrace'; traceId: string; spanId?: string }
+  | { type: 'switchTab'; tab: TabId };
+
+/** Top-level views, in sidebar order. Driven by the activity-bar navigation. */
+export type TabId = 'home' | 'sessions' | 'traces' | 'metrics' | 'logs';

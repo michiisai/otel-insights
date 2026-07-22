@@ -14,11 +14,33 @@
   "activationEvents": ["onStartupFinished"],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "otel-insights",
+          "title": "OTel Insights",
+          "icon": "media/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "otel-insights": [
+        {
+          "id": "otelInsightsNav",
+          "name": "Views",
+          "icon": "media/activity-icon.svg"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "otel-insights.openPanel",
         "title": "OTel Insights: Open Panel",
         "icon": "$(pulse)"
+      },
+      {
+        "command": "otel-insights.showTab",
+        "title": "OTel Insights: Show View"
       },
       {
         "command": "otel-insights.clearData",

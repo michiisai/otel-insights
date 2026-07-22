@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { TelemetryStore } from '@otel-insights/receiver';
 import { getTraces, getSpansByTraceId, getServices, getMetricsData, getLogs, getLogServiceNames } from '@otel-insights/engine';
-import type { WebviewToExtension, ExtensionToWebview } from '@otel-insights/types';
+import type { WebviewToExtension, ExtensionToWebview, TabId } from '@otel-insights/types';
 
 export class OtelInsightsPanel {
   static readonly viewType   = 'otelInsights';
@@ -9,6 +9,10 @@ export class OtelInsightsPanel {
 
   private readonly panel: vscode.WebviewPanel;
   private readonly disposables: vscode.Disposable[] = [];
+  /** True once the webview has booted and can receive messages. */
+  private ready = false;
+  /** A tab requested before the webview was ready; flushed on 'ready'. */
+  private pendingTab?: TabId;
 
   private constructor(
     private readonly extensionUri: vscode.Uri,
@@ -58,6 +62,18 @@ export class OtelInsightsPanel {
     this.post({ type: 'navigateToTrace', traceId, spanId });
   }
 
+  /** Reveal the panel and switch it to the given top-level view. Driven by the
+   *  activity-bar sidebar. If the webview hasn't booted yet (first open), the
+   *  switch is queued and flushed once the webview reports 'ready'. */
+  showTab(tab: TabId): void {
+    this.panel.reveal();
+    if (this.ready) {
+      this.post({ type: 'switchTab', tab });
+    } else {
+      this.pendingTab = tab;
+    }
+  }
+
   private post(msg: ExtensionToWebview): void {
     this.panel.webview.postMessage(msg);
   }
@@ -66,7 +82,12 @@ export class OtelInsightsPanel {
     const db = this.store.getDb();
     switch (msg.type) {
       case 'ready':
+        this.ready = true;
         this.post({ type: 'status', connected: true, port: this.port });
+        if (this.pendingTab) {
+          this.post({ type: 'switchTab', tab: this.pendingTab });
+          this.pendingTab = undefined;
+        }
         break;
       case 'getTraces':
         this.post({ type: 'traces', data: getTraces(db, {
@@ -152,11 +173,7 @@ export class OtelInsightsPanel {
 <div id="app">
 
   <header class="toolbar">
-    <nav class="tabs" role="tablist">
-      <button class="tab active" data-tab="traces"      role="tab" aria-selected="true">Traces</button>
-      <button class="tab"        data-tab="performance" role="tab">Performance</button>
-      <button class="tab"        data-tab="logs"        role="tab">Logs</button>
-    </nav>
+    <div class="toolbar-title">OTel Insights</div>
     <div class="toolbar-right">
       <span id="status-badge" class="badge">connecting…</span>
       <span class="toolbar-btn-group">
@@ -166,8 +183,40 @@ export class OtelInsightsPanel {
     </div>
   </header>
 
+  <!-- Home tab (span-derived analytics; formerly "Performance") -->
+  <div id="home-panel" class="panel active" role="tabpanel">
+    <div class="metrics-grid">
+
+      <section class="card">
+        <h3 class="card-title">📊 Summary</h3>
+        <div id="summary"></div>
+      </section>
+
+      <section class="card">
+        <h3 class="card-title">🪙 Token Usage</h3>
+        <div id="token-usage"></div>
+      </section>
+
+      <section class="card">
+        <h3 class="card-title">⏱️ Latency</h3>
+        <div id="slowest-ops"></div>
+      </section>
+
+      <section class="card">
+        <h3 class="card-title">🔧 Tool Calls</h3>
+        <div id="tool-calls"></div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- Sessions tab (placeholder — engine layer lands later) -->
+  <div id="sessions-panel" class="panel" role="tabpanel">
+    <div class="empty-state">Sessions coming soon.<br><small>Agent conversations will be grouped here.</small></div>
+  </div>
+
   <!-- Traces tab -->
-  <div id="traces-panel" class="panel active" role="tabpanel">
+  <div id="traces-panel" class="panel" role="tabpanel">
     <div class="traces-split">
 
       <!-- Left: trace list + waterfall -->
@@ -219,31 +268,9 @@ export class OtelInsightsPanel {
     </div>
   </div>
 
-  <!-- Performance tab -->
-  <div id="performance-panel" class="panel" role="tabpanel">
-    <div class="metrics-grid">
-
-      <section class="card">
-        <h3 class="card-title">📊 Summary</h3>
-        <div id="summary"></div>
-      </section>
-
-      <section class="card">
-        <h3 class="card-title">🪙 Token Usage</h3>
-        <div id="token-usage"></div>
-      </section>
-
-      <section class="card">
-        <h3 class="card-title">⏱️ Latency</h3>
-        <div id="slowest-ops"></div>
-      </section>
-
-      <section class="card">
-        <h3 class="card-title">🔧 Tool Calls</h3>
-        <div id="tool-calls"></div>
-      </section>
-
-    </div>
+  <!-- Metrics tab (placeholder — OTLP metrics surfacing lands later, #52) -->
+  <div id="metrics-panel" class="panel" role="tabpanel">
+    <div class="empty-state">Metrics coming soon.<br><small>Ingested OTLP metrics will be charted here.</small></div>
   </div>
 
   <!-- Logs tab -->
