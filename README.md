@@ -82,6 +82,30 @@ The receiver and your telemetry source **must use the same port**. The receiver 
    }
    ```
 
+   To capture **Claude Code** telemetry, add an `env` block to your Claude Code settings file (`~/.claude/settings.json`), then start a **new** Claude Code session (settings load at startup) and run a prompt:
+   ```jsonc
+   {
+     "env": {
+       "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+       // Export all three signals over OTLP/HTTP JSON to the receiver's port
+       "OTEL_TRACES_EXPORTER": "otlp",
+       "OTEL_METRICS_EXPORTER": "otlp",
+       "OTEL_LOGS_EXPORTER": "otlp",
+       "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+       "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+       // Flush metrics every 10s so short sessions still export (default is 60s)
+       "OTEL_METRIC_EXPORT_INTERVAL": "10000",
+       // Emit cumulative metrics (Claude Code defaults to delta) to match Copilot
+       "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "cumulative",
+       // Optional: include prompt / tool / response content in logs & spans
+       "OTEL_LOG_USER_PROMPTS": "1",
+       "OTEL_LOG_TOOL_DETAILS": "1",
+       "OTEL_LOG_TOOL_CONTENT": "1"
+     }
+   }
+   ```
+   > **Notes:** Use `http/json` — the receiver speaks OTLP/HTTP JSON, not gRPC or protobuf. The Metrics engine reads each metric's temporality, so `delta` data is also computed correctly; `cumulative` is only recommended so Claude Code lines up with Copilot's metrics. Claude Code data appears under the `claude-code` service in each tab.
+
 ### Recognized attributes
 
 For agent-specific attributes the Performance tab understands:
